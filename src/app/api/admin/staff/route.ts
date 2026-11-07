@@ -65,8 +65,11 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2. Crear su StaffProfile y asignarle todos los servicios activos y horarios base Lun-Sáb
+    // 2. Crear su StaffProfile y asignarle servicios seleccionados (o todos los activos por defecto) y horarios base Lun-Sáb
     const allServices = await prisma.service.findMany({ where: { isActive: true } });
+    const targetServiceIds: string[] = Array.isArray(body.serviceIds)
+      ? body.serviceIds
+      : allServices.map((s) => s.id);
 
     const newStaff = await prisma.staffProfile.create({
       data: {
@@ -78,8 +81,8 @@ export async function POST(req: Request) {
           "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80",
         isActive: true,
         services: {
-          create: allServices.map((s) => ({
-            serviceId: s.id,
+          create: targetServiceIds.map((serviceId) => ({
+            serviceId,
           })),
         },
         workingShifts: {
@@ -92,6 +95,7 @@ export async function POST(req: Request) {
       },
       include: {
         user: true,
+        services: true,
         workingShifts: true,
       },
     });
@@ -118,6 +122,7 @@ export async function PATCH(req: Request) {
       avatarUrl,
       customHorizonDays,
       customLeadTimeMin,
+      serviceIds,
     } = body;
 
     if (!staffId) {
@@ -134,6 +139,20 @@ export async function PATCH(req: Request) {
           { error: "Solo tienes permisos para modificar tu propio perfil." },
           { status: 403 }
         );
+      }
+    }
+
+    if (Array.isArray(serviceIds)) {
+      await prisma.staffService.deleteMany({
+        where: { staffId },
+      });
+      if (serviceIds.length > 0) {
+        await prisma.staffService.createMany({
+          data: serviceIds.map((svcId: string) => ({
+            staffId,
+            serviceId: String(svcId),
+          })),
+        });
       }
     }
 
@@ -155,6 +174,7 @@ export async function PATCH(req: Request) {
       },
       include: {
         user: true,
+        services: true,
         workingShifts: true,
       },
     });

@@ -779,49 +779,57 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 md:gap-4">
-                {services.map((svc: any) => (
-                  <button
-                    key={svc.id}
-                    onClick={() => {
-                      setSelectedService(svc);
-                      setStep(2);
-                    }}
-                    className="w-full text-left bg-[#27272A] hover:bg-[#1F1F23] text-white rounded-2xl md:rounded-3xl p-3.5 pl-5 pr-3.5 md:p-5 flex items-center justify-between transition-all shadow-sm hover:shadow-md active:scale-[0.99] group border border-transparent hover:border-zinc-700"
-                  >
-                    <div>
-                      <div className="font-bold text-sm md:text-base leading-tight text-white group-hover:text-emerald-300 transition-colors">
-                        {svc.name}
+                {services.map((svc: any) => {
+                  const doctorsForSvc = staffList.filter(
+                    (st: any) =>
+                      st.isActive !== false &&
+                      (svc.staff?.some((s: any) => s.staffId === st.id) ||
+                        st.services?.some((s: any) => s.serviceId === svc.id))
+                  );
+                  return (
+                    <button
+                      key={svc.id}
+                      onClick={() => {
+                        setSelectedService(svc);
+                        setStep(2);
+                      }}
+                      className="w-full text-left bg-[#27272A] hover:bg-[#1F1F23] text-white rounded-2xl md:rounded-3xl p-3.5 pl-5 pr-3.5 md:p-5 flex items-center justify-between transition-all shadow-sm hover:shadow-md active:scale-[0.99] group border border-transparent hover:border-zinc-700"
+                    >
+                      <div>
+                        <div className="font-bold text-sm md:text-base leading-tight text-white group-hover:text-emerald-300 transition-colors">
+                          {svc.name}
+                        </div>
+                        <div className="text-xs text-zinc-300 mt-1 flex items-center gap-2 flex-wrap">
+                          <span>⏱️ {svc.durationMin} min</span>
+                          {doctorsForSvc.length === 1 ? (
+                            <span className="text-[10px] bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 px-2 py-0.5 rounded-full font-semibold">
+                              Especialidad de {doctorsForSvc[0].displayName}
+                            </span>
+                          ) : doctorsForSvc.length > 1 &&
+                            doctorsForSvc.length < staffList.filter((s: any) => s.isActive !== false).length ? (
+                            <span className="text-[10px] bg-zinc-800 border border-zinc-600 text-zinc-200 px-2 py-0.5 rounded-full font-semibold">
+                              {doctorsForSvc.map((d: any) => d.displayName).join(" • ")}
+                            </span>
+                          ) : doctorsForSvc.length > 1 ? (
+                            <span className="text-[10px] bg-zinc-800/90 border border-zinc-700 text-zinc-300 px-2 py-0.5 rounded-full font-medium">
+                              Todo el equipo ({doctorsForSvc.length})
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
-                      <div className="text-xs text-zinc-300 mt-1 flex items-center gap-2 flex-wrap">
-                        <span>⏱️ {svc.durationMin} min</span>
-                        {(() => {
-                          const doctorsForSvc = staffList.filter((st: any) =>
-                            svc.staff?.some((s: any) => s.staffId === st.id) ||
-                            st.services?.some((s: any) => s.serviceId === svc.id)
-                          );
-                          if (doctorsForSvc.length === 1) {
-                            return (
-                              <span className="text-[10px] bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 px-2 py-0.2 rounded-full font-semibold">
-                                Atendido por {doctorsForSvc[0].displayName}
-                              </span>
-                            );
-                          }
-                          return null;
-                        })()}
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-3">
-                      <span className="font-bold text-sm md:text-base text-white">
-                        {settings?.currencySymbol || "$"}
-                        {svc.price.toFixed(2)}
-                      </span>
-                      <div className="w-10 h-10 rounded-full bg-white text-[#1F1F23] flex items-center justify-center group-hover:bg-emerald-400 group-hover:text-black transition-all">
-                        <ChevronRight className="w-4 h-4" />
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-sm md:text-base text-white">
+                          {settings?.currencySymbol || "$"}
+                          {svc.price.toFixed(2)}
+                        </span>
+                        <div className="w-10 h-10 rounded-full bg-white text-[#1F1F23] flex items-center justify-center group-hover:bg-emerald-400 group-hover:text-black transition-all">
+                          <ChevronRight className="w-4 h-4" />
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -847,12 +855,25 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
               return false;
             };
 
-            const eligibleStaff = staffList.filter((st: any) => {
-              if (selectedService?.id && st.services && st.services.length > 0) {
-                return st.services.some((s: any) => s.serviceId === selectedService.id);
-              }
-              return true;
-            });
+            const hasAnyServiceLinks =
+              (Array.isArray(selectedService?.staff) && selectedService.staff.length > 0) ||
+              staffList.some((st: any) => Array.isArray(st.services) && st.services.length > 0);
+
+            const isAssignedToSelectedService = (st: any) => {
+              if (!selectedService?.id || !hasAnyServiceLinks) return true;
+              return (
+                selectedService.staff?.some((s: any) => s.staffId === st.id) ||
+                st.services?.some((s: any) => s.serviceId === selectedService.id)
+              );
+            };
+
+            const eligibleStaff = staffList.filter((st: any) =>
+              isAssignedToSelectedService(st)
+            );
+
+            const nonAssignedStaff = staffList.filter(
+              (st: any) => st.isActive !== false && !isAssignedToSelectedService(st)
+            );
 
             const availableStaff = eligibleStaff.filter(
               (st: any) => !isStaffOnVacationEntireWindow(st)
@@ -1047,6 +1068,42 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                               </div>
                               <div className="text-xs text-zinc-500">
                                 Sin turnos en los próximos {horizonDays} días
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Non-assigned Staff cards (blocked because they don't perform this service) */}
+                      {nonAssignedStaff.map((st: any) => (
+                        <div
+                          key={st.id}
+                          className="w-full text-left bg-zinc-50/80 border border-dashed border-zinc-200 text-zinc-400 rounded-2xl md:rounded-full p-2.5 pr-4 flex items-center justify-between cursor-not-allowed opacity-70"
+                          title={`${st.displayName} no realiza ${selectedService?.name}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-200 border-2 border-zinc-200 flex-shrink-0 grayscale">
+                              {st.avatarUrl ? (
+                                <img
+                                  src={st.avatarUrl}
+                                  alt={st.displayName}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center font-bold text-xs text-zinc-500">
+                                  {st.displayName?.slice(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-bold text-sm text-zinc-600 flex items-center gap-1.5 flex-wrap">
+                                <span>{st.displayName}</span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200 text-zinc-700">
+                                  No realiza este servicio
+                                </span>
+                              </div>
+                              <div className="text-xs text-zinc-400">
+                                {st.specialtyTitle}
                               </div>
                             </div>
                           </div>

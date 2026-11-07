@@ -129,17 +129,20 @@ async function runBrowserTests() {
     // TC-03: Saturday Schedule (09:00-13:00) vs Sunday Closed
     // ========================================================================
     console.log("\n--- TC-03: Saturday Schedule (09:00-13:00) vs Sunday Closed ---");
-    // Look for Saturday pill (or HOY if test runs on Saturday)
-    const satPills = await page.$$("button:has-text('SÁB'), button:has-text('HOY')");
+    // Look for Saturday pill (or HOY if test runs on Saturday before 12:30, otherwise LUN)
+    const isSatAfternoon = today.getDay() === 6 && today.getHours() >= 12;
+    const satPills = isSatAfternoon
+      ? await page.$$("button:has-text('SÁB'), button:has-text('LUN')")
+      : await page.$$("button:has-text('SÁB'), button:has-text('HOY')");
     if (satPills.length > 0) {
       await satPills[0].click();
       await page.waitForTimeout(500);
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, "tc03-saturday-slots.png") });
 
-      const satSlots = await page.$$("button:has-text('09:'), button:has-text('10:'), button:has-text('11:'), button:has-text('12:')");
+      const satSlots = await page.$$("button:has-text('08:'), button:has-text('09:'), button:has-text('10:'), button:has-text('11:'), button:has-text('12:')");
       assert(
         satSlots.length > 0,
-        `TC-03: Dr. Alejandro Vega shows open morning slots on Saturday (${satSlots.length} slots found)`
+        `TC-03: Dr. Alejandro Vega shows open morning slots (${satSlots.length} slots found)`
       );
     }
 

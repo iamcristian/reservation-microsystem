@@ -48,17 +48,24 @@ export async function GET(req: Request) {
     // Query candidates
     let eligibleStaffIds: string[] = [];
 
+    const staffServices = await prisma.staffService.findMany({
+      where: {
+        serviceId,
+        staff: { isActive: true },
+      },
+      select: { staffId: true },
+    });
+    const assignedActiveStaffIds = staffServices.map((s) => s.staffId);
+
     if (staffId === "ANY") {
-      const staffServices = await prisma.staffService.findMany({
-        where: {
-          serviceId,
-          staff: { isActive: true },
-        },
-        select: { staffId: true },
-      });
-      eligibleStaffIds = staffServices.map((s) => s.staffId);
+      eligibleStaffIds = assignedActiveStaffIds;
     } else {
-      eligibleStaffIds = [staffId];
+      if (assignedActiveStaffIds.includes(staffId)) {
+        eligibleStaffIds = [staffId];
+      } else {
+        const totalAssignedCount = await prisma.staffService.count({ where: { serviceId } });
+        eligibleStaffIds = totalAssignedCount === 0 ? [staffId] : [];
+      }
     }
 
     if (eligibleStaffIds.length === 0) {

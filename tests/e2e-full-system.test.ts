@@ -526,6 +526,7 @@ async function runE2E() {
       const svcId = goodSvc.json.service.id;
       createdServiceIds.push(svcId);
 
+      const secondStaff = staffList.find((s: any) => s.id !== drAlejandro.id) || staffList[1];
       const editSvc = await adminSession.request("/api/admin/services", {
         method: "PUT",
         body: JSON.stringify({
@@ -534,11 +535,37 @@ async function runE2E() {
           durationMin: 45,
           bufferAfterMin: 10,
           price: 60,
+          staffIds: [secondStaff.id],
         }),
       });
       assert(
         editSvc.status === 200 && editSvc.json?.service?.price === 60 && editSvc.json?.service?.durationMin === 45,
-        "Service editing (PUT /api/admin/services) updates price and duration successfully"
+        "Service editing (PUT /api/admin/services) updates price, duration, and staff assignments successfully"
+      );
+
+      // Verify unassigned staff (drAlejandro) gets 0 slots for this service
+      const unassignedAvail = await anon.request(
+        `/api/availability?serviceId=${svcId}&staffId=${drAlejandro.id}&date=${targetDateStr}`
+      );
+      assert(
+        Array.isArray(unassignedAvail.json?.slots) && unassignedAvail.json.slots.length === 0,
+        "Service Assignment Guard: Unassigned professional returns 0 available slots for restricted service"
+      );
+
+      // Verify direct booking attempt with unassigned staff is rejected (HTTP 400)
+      const unassignedBook = await customerSession.request("/api/appointments", {
+        method: "POST",
+        body: JSON.stringify({
+          serviceId: svcId,
+          staffId: drAlejandro.id,
+          date: targetDateStr,
+          time: "10:00",
+          customerPhone: "59170099887",
+        }),
+      });
+      assert(
+        unassignedBook.status === 400,
+        "Service Assignment Guard: POST /api/appointments blocks booking a service with an unassigned professional (HTTP 400)"
       );
     }
 

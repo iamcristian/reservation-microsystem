@@ -74,6 +74,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     phone: string;
     bio: string;
     avatarUrl: string;
+    serviceIds?: string[];
   } | null>(null);
   const [savingStaff, setSavingStaff] = useState(false);
 
@@ -360,6 +361,122 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
         newActiveState
           ? "El profesional vuelve a estar visible en el portal para recibir reservas."
           : "El profesional ha sido pausado y ocultado del portal de reservas."
+      );
+      onRefresh();
+    } catch (e: any) {
+      showToast("error", "Error", e.message);
+    }
+  };
+
+  // Helper: get currently assigned serviceIds for a staff member
+  const getAssignedServiceIdsForStaff = (staffObj: any): string[] => {
+    if (!staffObj) return [];
+    return services
+      .filter(
+        (svc: any) =>
+          staffObj.services?.some((rel: any) => rel.serviceId === svc.id) ||
+          svc.staff?.some((rel: any) => rel.staffId === staffObj.id)
+      )
+      .map((svc: any) => svc.id);
+  };
+
+  // Toggle a single service assignment for a staff member (1-click pill toggle)
+  const handleToggleStaffService = async (staffObj: any, serviceObj: any) => {
+    if (!staffObj?.id || !serviceObj?.id) return;
+    const currentIds = getAssignedServiceIdsForStaff(staffObj);
+    const isCurrentlyAssigned = currentIds.includes(serviceObj.id);
+    const nextIds = isCurrentlyAssigned
+      ? currentIds.filter((id) => id !== serviceObj.id)
+      : [...currentIds, serviceObj.id];
+
+    try {
+      const res = await fetch("/api/admin/staff", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          staffId: staffObj.id,
+          serviceIds: nextIds,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast("error", "Error", data.error || "No se pudo actualizar los servicios.");
+        return;
+      }
+      showToast(
+        isCurrentlyAssigned ? "info" : "success",
+        isCurrentlyAssigned ? "Servicio bloqueado para este profesional" : "Servicio habilitado",
+        isCurrentlyAssigned
+          ? `${staffObj.displayName} ya no recibirá citas de "${serviceObj.name}".`
+          : `${staffObj.displayName} ahora atiende "${serviceObj.name}".`
+      );
+      onRefresh();
+    } catch (e: any) {
+      showToast("error", "Error", e.message);
+    }
+  };
+
+  // Set all services for a staff member at once
+  const handleSetAllStaffServices = async (staffObj: any, nextIds: string[]) => {
+    if (!staffObj?.id) return;
+    try {
+      const res = await fetch("/api/admin/staff", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          staffId: staffObj.id,
+          serviceIds: nextIds,
+        }),
+      });
+      if (res.ok) {
+        showToast(
+          "success",
+          "Servicios actualizados",
+          `Se actualizaron los servicios asignados a ${staffObj.displayName}.`
+        );
+        onRefresh();
+      }
+    } catch (e: any) {
+      showToast("error", "Error", e.message);
+    }
+  };
+
+  // Toggle a single staff member on a service card (1-click pill toggle)
+  const handleToggleServiceStaff = async (serviceObj: any, staffObj: any) => {
+    if (!serviceObj?.id || !staffObj?.id) return;
+    const currentStaffIds = staffList
+      .filter(
+        (st: any) =>
+          serviceObj.staff?.some((rel: any) => rel.staffId === st.id) ||
+          st.services?.some((rel: any) => rel.serviceId === serviceObj.id)
+      )
+      .map((st: any) => st.id);
+
+    const isAssigned = currentStaffIds.includes(staffObj.id);
+    const nextStaffIds = isAssigned
+      ? currentStaffIds.filter((id: string) => id !== staffObj.id)
+      : [...currentStaffIds, staffObj.id];
+
+    try {
+      const res = await fetch("/api/admin/services", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: serviceObj.id,
+          staffIds: nextStaffIds,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast("error", "Error", data.error || "No se pudo actualizar la asignación.");
+        return;
+      }
+      showToast(
+        isAssigned ? "info" : "success",
+        isAssigned ? "Profesional desasignado" : "Profesional asignado",
+        isAssigned
+          ? `${staffObj.displayName} ya no realiza "${serviceObj.name}".`
+          : `${staffObj.displayName} ha sido habilitado para "${serviceObj.name}".`
       );
       onRefresh();
     } catch (e: any) {
@@ -807,10 +924,12 @@ Te esperábamos para tu cita de *${apt.service?.name || "servicio"}* reservada p
         body: JSON.stringify({
           displayName: displayName.trim(),
           specialty: specialty.trim(),
+          specialtyTitle: specialty.trim(),
           email: emailClean,
           phone: phone.trim(),
           bio: bio.trim(),
           avatarUrl: avatarUrl.trim(),
+          serviceIds: staffModal.serviceIds ?? services.map((s: any) => s.id),
         }),
       });
       const data = await res.json();
@@ -1862,6 +1981,76 @@ Al ingresar con tu correo de Google podrás:
             })()}
           </div>
 
+          {/* Servicios asignados a este profesional (1-Clic para habilitar o bloquear) */}
+          {selectedStaff && (
+            <div className="p-4 rounded-2xl border border-zinc-200 bg-white space-y-2.5 text-xs">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h3 className="font-bold text-zinc-900 text-xs flex items-center gap-1.5">
+                    <Stethoscope className="w-4 h-4 text-zinc-700" />
+                    <span>
+                      Servicios que realiza {selectedStaff.displayName} (
+                      {getAssignedServiceIdsForStaff(selectedStaff).length} de {services.length})
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-zinc-500 mt-0.5">
+                    Haz clic en un servicio para habilitarlo o bloquearlo en tu agenda de citas.
+                  </p>
+                </div>
+                {getAssignedServiceIdsForStaff(selectedStaff).length < services.length && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSetAllStaffServices(
+                        selectedStaff,
+                        services.map((s: any) => s.id)
+                      )
+                    }
+                    className="px-3 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all"
+                  >
+                    Habilitar todos
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                {services.map((svc: any) => {
+                  const isAssigned = getAssignedServiceIdsForStaff(selectedStaff).includes(svc.id);
+                  return (
+                    <button
+                      key={svc.id}
+                      type="button"
+                      onClick={() => handleToggleStaffService(selectedStaff, svc)}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all flex items-center gap-1.5 active:scale-95 ${
+                        isAssigned
+                          ? "bg-[#1F1F23] text-white shadow-2xs hover:bg-black"
+                          : "bg-zinc-100 text-zinc-500 border border-dashed border-zinc-300 hover:text-zinc-800 hover:border-zinc-400"
+                      }`}
+                      title={
+                        isAssigned
+                          ? `Clic para dejar de atender "${svc.name}"`
+                          : `Clic para habilitar "${svc.name}"`
+                      }
+                    >
+                      <span>{isAssigned ? "✓" : "○"}</span>
+                      <span>{svc.name}</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                          isAssigned
+                            ? "bg-white/15 text-zinc-200"
+                            : "bg-zinc-200/80 text-zinc-500"
+                        }`}
+                      >
+                        {settings?.currencySymbol || "$"}
+                        {svc.price}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Banner de Edición Activa */}
           {isEditingShifts && (
             <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900 animate-in fade-in">
@@ -2295,6 +2484,7 @@ Al ingresar con tu correo de Google podrás:
                   bio: "",
                   avatarUrl:
                     "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=300&auto=format&fit=crop&q=80",
+                  serviceIds: services.map((s: any) => s.id),
                 })
               }
               className="px-3.5 py-2 rounded-full bg-[#1F1F23] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
@@ -2445,40 +2635,69 @@ Al ingresar con tu correo de Google podrás:
                     )}
                   </div>
 
-                  {/* Servicios asignados al profesional */}
+                  {/* Servicios asignados al profesional (1-Clic para habilitar o bloquear) */}
                   {(() => {
-                    const myServices = services.filter((s: any) =>
-                      st.services?.some((rel: any) => rel.serviceId === s.id) ||
-                      s.staff?.some((rel: any) => rel.staffId === st.id)
+                    const myServices = services.filter(
+                      (s: any) =>
+                        st.services?.some((rel: any) => rel.serviceId === s.id) ||
+                        s.staff?.some((rel: any) => rel.staffId === st.id)
                     );
+                    const myServiceIds = myServices.map((s: any) => s.id);
                     return (
-                      <div className="p-2.5 rounded-2xl bg-zinc-50 border border-zinc-200 text-xs">
-                        <div className="flex items-center justify-between text-[11px] mb-1">
-                          <span className="font-bold text-zinc-700">
-                            🩺 Servicios que realiza ({myServices.length} de {services.length}):
+                      <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200 text-xs space-y-2">
+                        <div className="flex items-center justify-between text-[11px] flex-wrap gap-1.5">
+                          <span className="font-bold text-zinc-800">
+                            🩺 Servicios habilitados para {st.displayName} ({myServices.length} de{" "}
+                            {services.length}) — <span className="text-zinc-500 font-medium">Clic para activar/bloquear:</span>
                           </span>
-                          {myServices.length === 0 && (
-                            <span className="text-amber-700 font-bold text-[10px]">
-                              ⚠️ Sin servicios asignados (No recibirá citas)
-                            </span>
-                          )}
-                        </div>
-                        {myServices.length > 0 ? (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {myServices.map((s: any) => (
-                              <span
-                                key={s.id}
-                                className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-800 text-[10px] font-semibold"
+                          <div className="flex items-center gap-1.5">
+                            {myServices.length < services.length && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleSetAllStaffServices(
+                                    st,
+                                    services.map((s: any) => s.id)
+                                  )
+                                }
+                                className="px-2.5 py-0.5 rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 text-[10px] font-bold transition-all"
                               >
-                                {s.name}
+                                Habilitar todos
+                              </button>
+                            )}
+                            {myServices.length === 0 && (
+                              <span className="text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                                ⚠️ Sin servicios asignados
                               </span>
-                            ))}
+                            )}
                           </div>
-                        ) : (
-                          <p className="text-[10px] text-zinc-500">
-                            Ve a la pestaña &quot;Servicios&quot; y pulsa &quot;✏️ Editar&quot; para asignarle los servicios que realiza.
-                          </p>
-                        )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {services.map((s: any) => {
+                            const isEnabled = myServiceIds.includes(s.id);
+                            return (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => handleToggleStaffService(st, s)}
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all flex items-center gap-1 active:scale-95 ${
+                                  isEnabled
+                                    ? "bg-[#1F1F23] text-white shadow-2xs hover:bg-black"
+                                    : "bg-white border border-dashed border-zinc-300 text-zinc-400 hover:text-zinc-700 hover:border-zinc-400"
+                                }`}
+                                title={
+                                  isEnabled
+                                    ? `Clic para bloquear "${s.name}" a ${st.displayName}`
+                                    : `Clic para habilitar "${s.name}" a ${st.displayName}`
+                                }
+                              >
+                                <span>{isEnabled ? "✓" : "○"}</span>
+                                <span>{s.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })()}
@@ -2621,10 +2840,7 @@ Al ingresar con tu correo de Google podrás:
                             bufferAfterMin: svc.bufferAfterMin ?? 0,
                             price: svc.price,
                             isActive: svc.isActive ?? true,
-                            staffIds:
-                              currentStaffIds.length > 0
-                                ? currentStaffIds
-                                : staffList.map((s: any) => s.id),
+                            staffIds: currentStaffIds,
                           });
                         }}
                         className="px-2.5 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all"
@@ -2635,31 +2851,47 @@ Al ingresar con tu correo de Google podrás:
                     </div>
                   </div>
 
-                  {/* Especialistas asignados a este servicio */}
-                  <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-[11px] flex-wrap gap-1.5">
-                    <span className="text-zinc-400 font-semibold uppercase text-[10px]">
-                      Atendido por:
-                    </span>
-                    {assignedStaff.length === 0 ? (
-                      <span className="text-amber-700 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full text-[10px]">
-                        ⚠️ Sin profesionales asignados (No disponible)
+                  {/* Especialistas asignados a este servicio (1-Clic para habilitar o bloquear) */}
+                  <div className="pt-2.5 border-t border-zinc-100 space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-zinc-500 font-bold uppercase tracking-wider">
+                        ¿Quiénes lo realizan? ({assignedStaff.length}/{staffList.length})
                       </span>
-                    ) : assignedStaff.length === staffList.length ? (
-                      <span className="text-emerald-800 font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10px]">
-                        ✓ Todo el equipo ({assignedStaff.length})
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {assignedStaff.map((st: any) => (
-                          <span
+                      {assignedStaff.length === 0 ? (
+                        <span className="text-amber-800 font-bold bg-amber-100 border border-amber-300 px-2 py-0.2 rounded-full">
+                          ⚠️ Sin asignar
+                        </span>
+                      ) : assignedStaff.length === staffList.length ? (
+                        <span className="text-emerald-800 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full">
+                          ✓ Todo el equipo
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {staffList.map((st: any) => {
+                        const isAssigned = assignedStaff.some((a: any) => a.id === st.id);
+                        return (
+                          <button
                             key={st.id}
-                            className="bg-zinc-100 border border-zinc-200 text-zinc-700 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                            type="button"
+                            onClick={() => handleToggleServiceStaff(svc, st)}
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all flex items-center gap-1 active:scale-95 ${
+                              isAssigned
+                                ? "bg-[#1F1F23] text-white shadow-2xs hover:bg-black"
+                                : "bg-zinc-100 border border-dashed border-zinc-300 text-zinc-400 hover:text-zinc-700 hover:border-zinc-400"
+                            }`}
+                            title={
+                              isAssigned
+                                ? `Clic para quitar a ${st.displayName} de "${svc.name}"`
+                                : `Clic para asignar a ${st.displayName} en "${svc.name}"`
+                            }
                           >
-                            {st.displayName}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                            <span>{isAssigned ? "✓" : "○"}</span>
+                            <span>{st.displayName}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               );
@@ -3756,6 +3988,60 @@ Al ingresar con tu correo de Google podrás:
                   ))}
                 </div>
               </div>
+
+              {/* Servicios asignados al nuevo profesional */}
+              {services.length > 0 && (
+                <div className="pt-2 border-t border-zinc-200">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] font-bold text-zinc-700 uppercase block">
+                      ¿Qué servicios realizará?
+                    </label>
+                    <span className="text-[10px] text-zinc-500 font-bold">
+                      {(staffModal.serviceIds || []).length} de {services.length}
+                    </span>
+                  </div>
+                  <div className="space-y-1 max-h-36 overflow-y-auto p-2 bg-zinc-50 rounded-2xl border border-zinc-200">
+                    {services.map((svc: any) => {
+                      const isChecked = (staffModal.serviceIds || []).includes(svc.id);
+                      return (
+                        <label
+                          key={svc.id}
+                          className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all ${
+                            isChecked
+                              ? "bg-white border border-zinc-300 shadow-2xs"
+                              : "hover:bg-zinc-100/70"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const currentIds = staffModal.serviceIds || [];
+                                const next = e.target.checked
+                                  ? [...currentIds, svc.id]
+                                  : currentIds.filter((id) => id !== svc.id);
+                                setStaffModal({
+                                  ...staffModal,
+                                  serviceIds: next,
+                                });
+                              }}
+                              className="w-4 h-4 rounded text-zinc-900 accent-zinc-900 cursor-pointer"
+                            />
+                            <span className="font-bold text-zinc-800 text-xs">
+                              {svc.name}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-zinc-500 font-semibold">
+                            {settings?.currencySymbol || "$"}
+                            {svc.price}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-5 flex gap-2">
