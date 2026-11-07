@@ -14,6 +14,7 @@ import {
   Phone,
   Sparkles,
   ArrowRight,
+  ArrowLeft,
   ShieldAlert,
   X,
 } from "lucide-react";
@@ -186,13 +187,15 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
   // Fetch available slots when entering Step 3 or changing date/staff/service
   useEffect(() => {
     if (!selectedService?.id || !selectedDateStr) return;
+    if (step !== 3 && step !== 4) return;
 
     let isMounted = true;
     setSlotsLoading(true);
     setBookingError(null);
 
     fetch(
-      `/api/availability?serviceId=${selectedService.id}&staffId=${selectedStaffId}&date=${selectedDateStr}`
+      `/api/availability?serviceId=${selectedService.id}&staffId=${selectedStaffId}&date=${selectedDateStr}&_t=${Date.now()}`,
+      { cache: "no-store" }
     )
       .then(async (res) => {
         if (!res.ok) return { slots: [] };
@@ -200,13 +203,14 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
       })
       .then((data) => {
         if (!isMounted || !data) return;
-        const slots = data.slots || [];
+        const slots: string[] = data.slots || [];
         setAvailableSlots(slots);
-        if (slots.length > 0 && !slots.includes(selectedTime)) {
-          setSelectedTime(slots[0]);
-        } else if (slots.length === 0) {
-          setSelectedTime("");
-        }
+        setSelectedTime((prevTime) => {
+          if (prevTime && slots.includes(prevTime)) {
+            return prevTime;
+          }
+          return slots.length > 0 ? slots[0] : "";
+        });
       })
       .catch((err) => console.error("Error fetching availability:", err))
       .finally(() => {
@@ -216,7 +220,40 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
     return () => {
       isMounted = false;
     };
-  }, [selectedService?.id, selectedStaffId, selectedDateStr]);
+  }, [step, selectedService?.id, selectedStaffId, selectedDateStr]);
+
+  // Real-time synchronization: Re-validate slots periodically or when returning to browser tab
+  useEffect(() => {
+    if (step !== 3 || !selectedService?.id || !selectedDateStr) return;
+
+    const refreshSlots = () => {
+      fetch(
+        `/api/availability?serviceId=${selectedService.id}&staffId=${selectedStaffId}&date=${selectedDateStr}&_t=${Date.now()}`,
+        { cache: "no-store" }
+      )
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!data) return;
+          const slots: string[] = data.slots || [];
+          setAvailableSlots(slots);
+          setSelectedTime((prevTime) => {
+            if (prevTime && slots.includes(prevTime)) {
+              return prevTime;
+            }
+            return slots.length > 0 ? slots[0] : "";
+          });
+        })
+        .catch(() => {});
+    };
+
+    window.addEventListener("focus", refreshSlots);
+    const interval = setInterval(refreshSlots, 12000);
+
+    return () => {
+      window.removeEventListener("focus", refreshSlots);
+      clearInterval(interval);
+    };
+  }, [step, selectedService?.id, selectedStaffId, selectedDateStr]);
 
   const selectedStaffObj = staffList.find((s: any) => s.id === selectedStaffId);
   const horizonDays =
@@ -895,11 +932,19 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                   {/* Right Column on Desktop: Time slots */}
                   <div className="md:col-span-7 mt-5 md:mt-0">
                     <div className="flex items-center justify-between mb-2.5">
-                      <label className="text-xs font-bold text-zinc-600 uppercase tracking-wider">
-                        Horarios disponibles
-                      </label>
-                      <span className="text-xs text-zinc-500 font-semibold">
-                        {availableSlots.length} libres
+                      <div>
+                        <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <span>Horarios disponibles</span>
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
+                            En vivo
+                          </span>
+                        </label>
+                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                          Solo se muestran turnos disponibles. Los horarios ocupados o con imprevistos quedan ocultos.
+                        </p>
+                      </div>
+                      <span className="text-xs text-zinc-600 font-bold bg-zinc-100 border border-zinc-200 px-2.5 py-1 rounded-full">
+                        {availableSlots.length} {availableSlots.length === 1 ? "libre" : "libres"}
                       </span>
                     </div>
 
@@ -951,9 +996,12 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
 
               <div className="mt-8 pt-4 border-t border-zinc-100 flex justify-end">
                 <button
-                  onClick={() => setStep(4)}
-                  disabled={!selectedTime}
-                  className="w-full md:w-auto md:min-w-[280px] rounded-full bg-[#1F1F23] text-white h-14 font-semibold text-sm shadow-lg flex items-center justify-center gap-2 hover:bg-black transition-all disabled:opacity-40"
+                  onClick={() => {
+                    if (!selectedTime || !availableSlots.includes(selectedTime)) return;
+                    setStep(4);
+                  }}
+                  disabled={!selectedTime || !availableSlots.includes(selectedTime) || availableSlots.length === 0}
+                  className="w-full md:w-auto md:min-w-[280px] rounded-full bg-[#1F1F23] text-white h-14 font-semibold text-sm shadow-lg flex items-center justify-center gap-2 hover:bg-black transition-all disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
                 >
                   <span>Continuar al Resumen</span>
                   <ArrowRight className="w-4 h-4" />
@@ -1185,9 +1233,28 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                   </div>
 
                   {bookingError && (
-                    <div className="p-3.5 rounded-2xl bg-red-50 text-red-700 text-xs font-semibold border border-red-200 flex items-center gap-2">
-                      <ShieldAlert className="w-4 h-4 flex-shrink-0 text-red-600" />
-                      <span>{bookingError}</span>
+                    <div className="p-3.5 rounded-2xl bg-red-50 text-red-700 text-xs font-semibold border border-red-200 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4 flex-shrink-0 text-red-600" />
+                        <span>{bookingError}</span>
+                      </div>
+                      {(bookingError.includes("no está disponible") ||
+                        bookingError.includes("margen") ||
+                        bookingError.includes("franja") ||
+                        bookingError.includes("ocupado")) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedTime("");
+                            setBookingError(null);
+                            setStep(3);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-100 hover:bg-red-200 text-red-900 text-[11px] font-bold transition-all cursor-pointer"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          <span>Volver al Paso 3 y elegir un horario libre disponible</span>
+                        </button>
+                      )}
                     </div>
                   )}
 

@@ -147,10 +147,11 @@ async function runBrowserTests() {
     const domPills = await page.$$("button:has-text('DOM')");
     if (domPills.length > 0) {
       await domPills[0].click();
-      await page.waitForTimeout(400);
-      const domSlotsText = await (await page.$("text=libres"))?.innerText();
+      await page.waitForTimeout(600);
+      const noSlotsNotice = await page.$("text=Sin cupos disponibles");
+      const domSlotsBadge = await page.$("span:has-text('0 libres')");
       assert(
-        domSlotsText?.includes("0 libres") ?? false,
+        noSlotsNotice !== null || domSlotsBadge !== null,
         "TC-03: Sunday shows 0 slots available (clinic closed on Sunday)"
       );
     }

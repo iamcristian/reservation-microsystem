@@ -363,8 +363,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     }
   }, [isProviderOnly, currentUser?.id, staffList, activeTab, selectedStaffId]);
 
-  // Appointments for selected date and staff
-  const [dayAppointments, setDayAppointments] = useState<any[]>([]);
+  // Appointments state
   const [loadingApts, setLoadingApts] = useState(false);
   const [adminAptFilter, setAdminAptFilter] = useState<
     "pending" | "completed" | "noshow" | "all"
@@ -411,10 +410,29 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     initialData?.allAppointments || []
   );
 
+  // Keep allAppointments synchronized with initialData from parent
+  useEffect(() => {
+    if (initialData?.allAppointments) {
+      setAllAppointments(initialData.allAppointments);
+    }
+  }, [initialData?.allAppointments]);
+
+  // Derive dayAppointments reactively and deterministically from allAppointments
+  const dayAppointments = useMemo(() => {
+    return allAppointments.filter((a: any) => {
+      const aStr = formatLocalDateYYYYMMDD(new Date(a.startAt));
+      const matchesStaff =
+        !selectedStaffId ||
+        selectedStaffId === "ALL" ||
+        a.staffId === selectedStaffId;
+      return aStr === agendaDateStr && matchesStaff;
+    });
+  }, [allAppointments, agendaDateStr, selectedStaffId]);
+
   // Fetch appointments for agenda date and selected staff
   const loadDayAppointments = () => {
     setLoadingApts(true);
-    fetch("/api/bootstrap")
+    fetch("/api/bootstrap", { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) return null;
         return res.json().catch(() => null);
@@ -423,15 +441,6 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
         if (!data) return;
         const apts = data.allAppointments || data.userAppointments || [];
         setAllAppointments(apts);
-        const forDate = apts.filter((a: any) => {
-          const dStr = formatLocalDateYYYYMMDD(new Date(a.startAt));
-          const matchesStaff =
-            !selectedStaffId ||
-            selectedStaffId === "ALL" ||
-            a.staffId === selectedStaffId;
-          return dStr === agendaDateStr && matchesStaff;
-        });
-        setDayAppointments(forDate);
       })
       .catch((err) => console.error("Error loading appointments:", err))
       .finally(() => setLoadingApts(false));

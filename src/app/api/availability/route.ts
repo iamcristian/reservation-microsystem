@@ -124,6 +124,7 @@ export async function GET(req: Request) {
         serviceDuration: totalServiceDuration,
         slotStepMin: slotStep,
         leadTimeMin: staffLeadTime,
+        now: new Date(),
       });
 
       for (const time of availableForStaff) {
@@ -135,12 +136,21 @@ export async function GET(req: Request) {
 
     const sortedSlots = Array.from(allSlotsMap.keys()).sort();
 
-    return NextResponse.json({
-      date: dateStr,
-      service,
-      slots: sortedSlots,
-      slotStaffMapping: Object.fromEntries(allSlotsMap),
-    });
+    return NextResponse.json(
+      {
+        date: dateStr,
+        service,
+        slots: sortedSlots,
+        slotStaffMapping: Object.fromEntries(allSlotsMap),
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error: any) {
     console.error("Availability error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
