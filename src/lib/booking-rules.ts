@@ -21,7 +21,7 @@ export function canCustomerCancelAppointment(
     return { allowed: false, reason: "La cita ya fue completada." };
   }
 
-  // EXCEPCIÓN CLAVE: Si el profesional movió la cita por un imprevisto, el cliente SIEMPRE puede cancelar
+  // KEY EXCEPTION: If the specialist rescheduled the appointment due to an unforeseen event, customer can ALWAYS cancel for free
   if (appointment.allowFreeCancel || appointment.status === "RESCHEDULED_BY_STAFF") {
     return {
       allowed: true,

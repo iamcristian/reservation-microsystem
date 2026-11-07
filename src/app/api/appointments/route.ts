@@ -92,8 +92,8 @@ export async function POST(req: Request) {
       await setSessionUserId(user.id);
     }
 
-    // Criterio de Aceptación: Una cuenta médica/profesional (PROVIDER) no es un cliente.
-    // Los doctores gestionan citas en /admin, no se auto-agendan en el flujo público.
+    // Acceptance Criterion: A professional provider account (PROVIDER) is not a customer.
+    // Doctors manage appointments in /admin and cannot self-book in the public customer flow.
     if (user.role === "PROVIDER") {
       return NextResponse.json(
         {

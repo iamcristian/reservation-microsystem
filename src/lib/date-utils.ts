@@ -1,9 +1,9 @@
 // src/lib/date-utils.ts
 
 /**
- * Retorna la fecha en formato YYYY-MM-DD en la zona horaria local.
- * IMPORTANTE: Nunca usar toISOString().split("T")[0] para fechas de agenda
- * porque toISOString convierte a UTC y después de las 20:00 (en UTC-4) cambia al día de mañana.
+ * Returns date formatted as YYYY-MM-DD in the user's local timezone.
+ * IMPORTANT: Never use toISOString().split("T")[0] for booking calendar dates,
+ * because toISOString converts to UTC and shifts to tomorrow's date during evening hours.
  */
 export function formatLocalDateYYYYMMDD(d: Date = new Date()): string {
   const year = d.getFullYear();

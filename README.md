@@ -1,174 +1,174 @@
-# 🌟 Reservas App — Plataforma White-Label de Gestión de Citas y Reservas Multi-Profesional
+# 🌟 Reservas App — Multi-Staff Appointment Scheduling & Booking Platform
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.4.5-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.x-38B2AC?logo=tailwind-css)](https://tailwindcss.com/)
 [![Prisma ORM](https://img.shields.io/badge/Prisma-6.x-2D3748?logo=prisma)](https://www.prisma.io/)
-[![Playwright](https://img.shields.io/badge/Playwright-31%2F31%20Pass%20(100%25)-green?logo=playwright)](https://playwright.dev/)
+[![Playwright](https://img.shields.io/badge/Playwright-32%2F32%20Pass%20(100%25)-green?logo=playwright)](https://playwright.dev/)
 [![PWA Ready](https://img.shields.io/badge/PWA-Installable-purple?logo=pwa)](https://web.dev/progressive-web-apps/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> Una solución integral, moderna y modularizada para la reserva y gestión inteligente de turnos multi-profesional. Diseñada con arquitectura desacoplada y marca blanca para adaptarse con un clic a **Clínicas Odontológicas y Médicas, Barberías, Salones de Belleza, Spas, Estudios de Tatuaje y Centros de Fitness**.
+> A production-grade, modular, white-label appointment management and online booking platform designed for multi-professional businesses. Built with a decoupled architecture to seamlessly adapt with one click to **Dental & Medical Clinics, Barbershops, Hair Salons, Spas, Tattoo Studios, and Fitness Centers**.
 
 ---
 
-## 📸 Galería Visual del Sistema
+## 📸 System Showcase & Visual Gallery
 
-| 1. Portal Público y Catálogo (Desktop & Mobile) | 2. Selector de Horarios Libres en Tiempo Real |
+| 1. Public Portal & Service Catalog (Desktop & Mobile) | 2. Real-Time Slot Picker & Availability Engine |
 | :---: | :---: |
-| ![Catálogo Público](docs/screenshots/01-portal-cliente-catalogo.png) | ![Selector de Horarios](docs/screenshots/02-seleccion-horarios-slots.png) |
-| **3. Confirmación Atómica con Concentric Circles** | **4. Gestión de Equipo y Permisos RBAC** |
-| ![Confirmación](docs/screenshots/03-confirmacion-cita-qr.png) | ![Gestión de Equipo](docs/screenshots/04-admin-equipo-permisos.png) |
-| **5. Agenda Diaria e Imprevistos 1-Toque** | **6. Configuración de Jornadas y Horarios** |
-| ![Agenda Diaria](docs/screenshots/05-admin-agenda-imprevistos.png) | ![Horarios Semanales](docs/screenshots/06-admin-configuracion-horarios.png) |
+| ![Public Catalog](docs/screenshots/01-portal-cliente-catalogo.png) | ![Slot Picker](docs/screenshots/02-seleccion-horarios-slots.png) |
+| **3. Atomic Booking Confirmation & Concentric Circles** | **4. Team Management & Granular RBAC Permissions** |
+| ![Booking Confirmation](docs/screenshots/03-confirmacion-cita-qr.png) | ![Team Management](docs/screenshots/04-admin-equipo-permisos.png) |
+| **5. Daily Calendar & 1-Touch Schedule Overrides** | **6. Weekly Shifts & Business Hours Configuration** |
+| ![Daily Calendar](docs/screenshots/05-admin-agenda-imprevistos.png) | ![Weekly Shifts](docs/screenshots/06-admin-configuracion-horarios.png) |
 
 ---
 
-## ⚡ Características Principales y Lógica de Negocio
+## ⚡ Core Capabilities & Business Logic
 
-### 👤 Portal del Cliente (Front-Office)
-- **Flujo de Reserva en 4 Pasos Sin Fricción:** Catálogo de servicios $\to$ Selección de profesional $\to$ Selección de fecha y hora $\to$ Confirmación con teléfono y contraseña cifrada.
-- **Asignación Inteligente `"Cualquier Profesional"` (`ANY`):** Algoritmo que balancea automáticamente los turnos entre los especialistas disponibles en el horario elegido.
-- **Gestión de Mis Citas:** Vista de citas confirmadas, reprogramadas o canceladas con acordeón colapsable de **Historial de citas pasadas y archivo**.
-- **Avisos Instantáneos por WhatsApp:** Enlace con un toque a `https://wa.me/` con el mensaje pre-cargado con fecha, hora y servicio.
-- **Progressive Web App (PWA):** Soporta instalación como aplicación nativa en Android, iOS y Desktop con `manifest.webmanifest` y Service Worker.
+### 👤 Customer Booking Portal (Front-Office)
+- **Frictionless 4-Step Booking Wizard:** Service selection $\to$ Staff member selection $\to$ Date & slot selection $\to$ Customer identification and confirmation.
+- **Intelligent Staff Auto-Assignment (`ANY`):** Load-balancing algorithm that dynamically assigns the appointment to the best available professional for the chosen time slot.
+- **Self-Service "My Appointments" Hub:** Direct view of active, rescheduled, and past bookings with an expandable **Past Appointments & Archive** drawer.
+- **Instant WhatsApp Deep-Links:** One-tap integration to `https://wa.me/` with pre-filled localized text containing appointment date, time, service name, and clinic details.
+- **Progressive Web App (PWA):** Fully installable as a native app on Android, iOS, and Desktop with `manifest.webmanifest`, app icons, and offline shell caching.
 
-### 🛡️ Panel de Gestión y Control Administrativo (`/admin`)
-- **Control de Acceso Basado en Roles (RBAC):**
-  - `👑 ADMIN / DUEÑO PRINCIPAL`: Control total sobre datos del local, logotipo, catálogo de precios, reglas de aviso, jornadas y altas/bajas de personal.
-  - `🩺 PROVIDER (Médico / Barbero / Colaborador)`: Acceso restringido exclusivamente a su propia agenda, asistencias e imprevistos. Invariante: tiene bloqueado el auto-agendamiento como cliente en `/`.
-- **Acciones Rápidas de Imprevisto (1-Toque):**
-  - *Entrar más tarde hoy* (retraso programado).
-  - *Salir antes / Cumpleaños* (cierre anticipado).
-  - *Cerrar día completo* (bloqueo total con cancelación segura de citas afectadas y notificación al cliente).
-  - *Reabrir horario*: botón de desbloqueo inmediato para restaurar turnos.
-- **Filtro de Agenda Multi-Doctor y `"👥 Todo el equipo"`:** Vista individual por profesional o consolidada de toda la clínica.
-- **Sistema Anti-Acaparamiento (Anti-Hoarding):** Límite configurable de máximo **2 citas activas por paciente**.
-- **Sistema Anti-Trolls (2 Strikes):** Si un cliente acumula 2 faltas registradas (`NO_SHOW`), su cuenta queda bloqueada automáticamente para nuevas reservas web.
-- **Configuración de Marca Blanca Dinámica:** Adaptación total de la terminología (`staffLabel`), moneda, márgenes de anticipación y tiempos de buffer.
+### 🛡️ Administrative & Operations Management Hub (`/admin`)
+- **Role-Based Access Control (RBAC):**
+  - `👑 ADMIN / PRIMARY OWNER`: Full control over clinic profile, logo, location map, pricing catalog, scheduling rules, and staff authorization.
+  - `🩺 PROVIDER (Doctor / Barber / Specialist)`: Strictly isolated view restricted to their own appointments, attendances, and personal schedule overrides. Role invariant: blocked from self-booking appointments as a patient.
+- **1-Touch Unplanned Schedule Overrides:**
+  - *Late arrival today* (shift start time delayed).
+  - *Early departure / Event* (shift end time curtailed).
+  - *Close full day* (day blocked off with automated notification to affected clients).
+  - *Reopen schedule*: immediate one-click restore button to clear day blocks and re-enable slots.
+- **Multi-Staff Calendar Filter & `"👥 Whole Team"` View:** Switch between individual specialist views or inspect the clinic's consolidated daily schedule.
+- **Anti-Hoarding Safeguards:** Enforces a configurable cap of maximum **2 active upcoming bookings per customer**.
+- **Anti-Troll & No-Show Protection (2-Strike System):** Automatically locks a customer's account from creating new web bookings if they accumulate 2 recorded unexcused absences (`NO_SHOW`).
+- **Dynamic White-Label Customization:** Customize brand name, staff terminology (`staffLabel`: "Doctor", "Barbero", "Terapeuta", etc.), currency symbol, cancellation policies, and lead times.
 
 ---
 
-## 🏗️ Arquitectura y Tecnologías
+## 🏗️ System Architecture & Technology Stack
 
 ```
 reservas-app/
-├── docs/                       # Documentación técnica completa y diagramas C4
-│   ├── ARCHITECTURE.md         # Diagramas C4 (Context, Container, Component, Deployment)
-│   ├── DATABASE.md             # Modelo relacional, diccionario de datos y migración
-│   ├── REQUIREMENTS.md         # Requerimientos funcionales, no funcionales y bugs resueltos
-│   ├── FLOWS.md                # Diagramas de secuencia de algoritmos clave
-│   └── screenshots/            # Capturas de pantalla curadas en alta resolución
+├── docs/                       # Technical architecture documentation & C4 models
+│   ├── ARCHITECTURE.md         # C4 System Context, Container, Component & Deployment diagrams
+│   ├── DATABASE.md             # Relational data schema, entity dictionary & migration guides
+│   ├── REQUIREMENTS.md         # Functional, non-functional requirements & traceability matrix
+│   ├── FLOWS.md                # Sequence diagrams for booking, slot calculation & overrides
+│   └── screenshots/            # Curated high-resolution portfolio screenshots
 ├── src/
-│   ├── app/                    # Next.js App Router (Páginas y Endpoints REST)
-│   │   ├── api/                # Controladores API (/availability, /appointments, /admin/*)
-│   │   ├── admin/              # Panel administrativo con protección de roles
-│   │   └── page.tsx            # Portal público de reservas para clientes
-│   ├── components/             # Componentes React interactivos (Tailwind CSS 4)
-│   │   ├── ClientApp.tsx       # Flujo de reserva y portal de citas del paciente
-│   │   ├── AdminApp.tsx        # Dashboard administrativo y agenda médica
-│   │   └── BranchMap.tsx       # Modal de mapa georreferenciado Leaflet/OpenStreetMap
-│   └── lib/                    # Motores desacoplados de lógica de negocio pura
-│       ├── slot-engine.ts      # Generador de slots, horas pasadas y lead time
-│       ├── booking-rules.ts    # Invariantes temporales, anti-solapamiento y cancelaciones
-│       ├── session.ts          # Manejo de cookies HttpOnly seguras
-│       └── prisma.ts           # Singleton tipado del cliente Prisma ORM
+│   ├── app/                    # Next.js App Router (Pages & REST Endpoints)
+│   │   ├── api/                # API routes (/availability, /appointments, /admin/*, /auth/*)
+│   │   ├── admin/              # Role-protected administration dashboard
+│   │   └── page.tsx            # Public customer booking wizard
+│   ├── components/             # Reusable interactive React components (Tailwind CSS 4)
+│   │   ├── ClientApp.tsx       # 4-step wizard, appointment cards & PWA banner
+│   │   ├── AdminApp.tsx        # Calendar dashboard, shifts editor & staff manager
+│   │   └── BranchMap.tsx       # Interactive Leaflet/OpenStreetMap branch modal
+│   └── lib/                    # Pure, decoupled business logic engines
+│       ├── slot-engine.ts      # Slot computation, past hour filtering & lead time rules
+│       ├── booking-rules.ts    # Temporal invariants, collision checks & cancellation logic
+│       ├── session.ts          # Secure HttpOnly session cookie utilities
+│       └── prisma.ts           # Typed Prisma ORM singleton client
 ├── prisma/
-│   ├── schema.prisma           # Esquema relacional agnóstico (SQLite / PostgreSQL)
-│   └── seed.ts                 # Datos iniciales realistas para pruebas inmediatas
-└── tests/                      # Suite integral de pruebas automatizadas
-    ├── acceptance-criteria.test.ts # 16 pruebas unitarias de invariantes temporales
-    ├── e2e-full-system.test.ts     # 38 pruebas de integración API y endpoints
-    └── playwright-suite.ts         # 31 pasos en navegador Google Chrome real (Playwright)
+│   ├── schema.prisma           # Database-agnostic relational schema (SQLite / PostgreSQL)
+│   └── seed.ts                 # Realistic initial seed data for immediate evaluation
+└── tests/                      # Comprehensive automated test pyramid
+    ├── acceptance-criteria.test.ts # 16 unit tests for temporal invariants & shifts
+    ├── e2e-full-system.test.ts     # 37 full-stack API & database integration tests
+    └── playwright-suite.ts         # 32 end-to-end browser steps executed in real Chromium
 ```
 
 ---
 
-## 🚀 Inicio Rápido (Desarrollo Local)
+## 🚀 Quick Start (Local Development)
 
-### 1. Clonar el repositorio e instalar dependencias
+### 1. Clone the repository and install dependencies
 ```bash
-git clone https://github.com/tu-usuario/reservas-app.git
+git clone https://github.com/your-username/reservas-app.git
 cd reservas-app
 pnpm install
 ```
 
-### 2. Configurar variables de entorno
+### 2. Configure environment variables
 ```bash
 cp .env.example .env
 ```
 
-### 3. Inicializar base de datos y cargar datos semilla
+### 3. Initialize database and load seed data
 ```bash
 pnpm prisma db push
 pnpm tsx prisma/seed.ts
 ```
 
-### 4. Iniciar servidor de desarrollo
+### 4. Start development server
 ```bash
 pnpm dev
 ```
-Abre en tu navegador:
-- **Portal de Pacientes:** `http://localhost:3000`
-- **Panel de Gestión / Admin:** `http://localhost:3000/admin`
+Open your browser at:
+- **Customer Booking Portal:** `http://localhost:3000`
+- **Management & Admin Dashboard:** `http://localhost:3000/admin`
 
 ---
 
-## 🔐 Cuentas de Acceso Pre-configuradas (Seed)
+## 🔐 Pre-configured Test Accounts (Seed)
 
-| Rol | Nombre | Correo (`email`) | Contraseña | Perfil y Permisos |
+| Role | Name | Email (`email`) | Password | Scope & Permissions |
 | :--- | :--- | :--- | :--- | :--- |
-| **Admin / Dueño** | Dr. Alejandro Vega | `alejandro@sonrisa.com` | `Admin123!` | Acceso total a ajustes, local, equipo y agenda |
-| **Doctora (Empleado)** | Dra. Sofía Ríos | `sofia@sonrisa.com` | `Doctor123!` | Ortodoncia • Agenda propia e imprevistos |
-| **Doctor (Empleado)** | Dr. Marcos Paz | `marcos@sonrisa.com` | `Doctor123!` | Endodoncia y Madrugadas • Agenda propia |
-| **Cliente / Paciente** | Carlos Mendoza | `carlos@ejemplo.com` | `123456` | Portal público de citas e historial |
+| **Admin / Owner** | Dr. Alejandro Vega | `alejandro@sonrisa.com` | `Admin123!` | Full administrative access to settings, staff, and agenda |
+| **Doctor (Staff)** | Dra. Sofía Ríos | `sofia@sonrisa.com` | `Doctor123!` | Orthodontics specialist • Personal schedule & overrides |
+| **Doctor (Staff)** | Dr. Marcos Paz | `marcos@sonrisa.com` | `Doctor123!` | Endodontics & emergency shifts • Personal schedule |
+| **Customer / Patient** | Carlos Mendoza | `carlos@ejemplo.com` | `123456` | Public booking wizard & appointment history |
 
 ---
 
-## 🧪 Pruebas Automatizadas y Calidad de Código
+## 🧪 Automated Testing & Code Quality
 
-El repositorio cuenta con una cobertura de pruebas exhaustiva que evalúa lógica matemática de horarios, base de datos y navegación real en navegador:
+The codebase enforces a rigorous test pyramid covering mathematical time invariants, database integrity, and end-to-end browser automation:
 
 ```bash
-# 1. Pruebas unitarias de invariantes temporales (16/16 PASS)
+# 1. Unit tests for temporal invariants & shifts (16/16 PASS)
 pnpm test
 
-# 2. Pruebas de integración E2E de API y Base de Datos (38/38 PASS)
+# 2. Full-stack API & database integration tests (37/37 PASS)
 pnpm test:e2e
 
-# 3. Pruebas automatizadas en navegador Chrome Real con Playwright (31/31 PASS)
+# 3. Real Chromium browser automation with Playwright (32/32 PASS)
 pnpm tsx tests/playwright-suite.ts
 
-# 4. Verificación de compilación de producción Next.js Turbopack
+# 4. Production build verification with Next.js Turbopack
 pnpm build
 ```
 
 ---
 
-## 📚 Documentación Técnica Adicional
+## 📚 Technical Architecture Documentation
 
-- [🏛️ Arquitectura del Sistema y Diagramas C4 (`docs/ARCHITECTURE.md`)](docs/ARCHITECTURE.md)
-- [🗄️ Modelo de Base de Datos y Diccionario (`docs/DATABASE.md`)](docs/DATABASE.md)
-- [📋 Requerimientos y Matriz de Errores Resueltos (`docs/REQUIREMENTS.md`)](docs/REQUIREMENTS.md)
-- [🔄 Diagramas de Flujo y Secuencia Mermaid (`docs/FLOWS.md`)](docs/FLOWS.md)
-
----
-
-## 🌐 Despliegue en Producción
-
-### Base de Datos en la Nube (PostgreSQL Serverless)
-1. Crea una base de datos gratuita en [Neon.tech](https://neon.tech) o [Supabase](https://supabase.com).
-2. En `prisma/schema.prisma`, cambia `provider = "sqlite"` a `provider = "postgresql"`.
-3. Ejecuta `pnpm prisma db push` para aplicar el esquema en producción.
-
-### Despliegue en Vercel
-1. Conecta tu repositorio de GitHub en [Vercel](https://vercel.com).
-2. Agrega la variable de entorno `DATABASE_URL` con la cadena de conexión de Neon/Supabase.
-3. En **Build Command** especifica: `pnpm prisma generate && next build`.
-4. ¡Tu aplicación estará en línea con HTTPS, CDN global y soporte PWA activo!
+- [🏛️ System Architecture & C4 Models (`docs/ARCHITECTURE.md`)](docs/ARCHITECTURE.md)
+- [🗄️ Database Schema & Entity Dictionary (`docs/DATABASE.md`)](docs/DATABASE.md)
+- [📋 System Requirements & Traceability Matrix (`docs/REQUIREMENTS.md`)](docs/REQUIREMENTS.md)
+- [🔄 Core Business Logic Sequence Diagrams (`docs/FLOWS.md`)](docs/FLOWS.md)
 
 ---
 
-## 📄 Licencia
+## 🌐 Production Deployment
 
-Este proyecto está bajo la Licencia **MIT**. Consulta el archivo `LICENSE` para más detalles.
+### Cloud Database (Serverless PostgreSQL)
+1. Provision a free PostgreSQL database on [Neon.tech](https://neon.tech) or [Supabase](https://supabase.com).
+2. In `prisma/schema.prisma`, update the datasource provider from `"sqlite"` to `"postgresql"`.
+3. Run `pnpm prisma db push` to synchronize the schema with your production cluster.
+
+### Hosting on Vercel
+1. Import your GitHub repository into [Vercel](https://vercel.com).
+2. Set the `DATABASE_URL` environment variable to your Neon/Supabase connection string.
+3. In **Build Command**, configure: `pnpm prisma generate && next build`.
+4. Your application will deploy with automated HTTPS, global edge caching, and active PWA support!
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.

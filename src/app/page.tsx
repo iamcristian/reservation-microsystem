@@ -33,8 +33,8 @@ export default function HomePage() {
     loadData();
   }, []);
 
-  // Invariante de Rol: Si el usuario es un Doctor (PROVIDER), su entorno es la Agenda en /admin.
-  // No debe ver el flujo de cliente para comprar citas.
+  // Role Invariant: If authenticated user is a specialist (PROVIDER), their workspace is /admin.
+  // Doctors are redirected to the management panel and cannot book appointments as customers.
   useEffect(() => {
     if (data?.currentUser?.role === "PROVIDER") {
       router.replace("/admin");

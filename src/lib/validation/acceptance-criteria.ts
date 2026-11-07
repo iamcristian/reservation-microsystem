@@ -1,14 +1,14 @@
 // src/lib/validation/acceptance-criteria.ts
 /**
- * CRITERIOS DE ACEPTACIÓN DEL SISTEMA DE RESERVAS & HORARIOS
+ * BUSINESS ACCEPTANCE CRITERIA FOR SHIFTS & SCHEDULES
  * 
- * Reglas de negocio e invariantes estrictas para evitar turnos imposibles,
- * solapamientos de agenda, inconsistencias temporales y reservas fantasmas.
+ * Strict domain invariants preventing impossible working hours, schedule overlaps,
+ * temporal discrepancies, and ghost appointments.
  */
 
 export interface ShiftItem {
   id?: string;
-  dayOfWeek: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+  dayOfWeek: number; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
   startTime: string; // "HH:mm" (24h)
   endTime: string;   // "HH:mm" (24h)
 }
@@ -26,12 +26,12 @@ export interface ShiftValidationResult {
   dayErrors: Record<number, string[]>;
 }
 
-// Criterio AC-SHIFT-01: Formato HH:mm estricto 00:00 a 23:59
+// Criterion AC-SHIFT-01: Strict HH:mm format 00:00 to 23:59
 export const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /**
- * Convierte "HH:mm" a minutos transcurridos desde medianoche (0 - 1439).
- * Retorna -1 si el formato es inválido.
+ * Converts "HH:mm" to elapsed minutes since midnight (0 - 1439).
+ * Returns -1 if the format is invalid.
  */
 export function timeToMinutes(timeStr: string): number {
   if (!timeStr || typeof timeStr !== "string" || !TIME_REGEX.test(timeStr)) {
@@ -42,7 +42,7 @@ export function timeToMinutes(timeStr: string): number {
 }
 
 /**
- * Convierte minutos desde medianoche a formato "HH:mm".
+ * Converts minutes since midnight back to "HH:mm" format.
  */
 export function minutesToTime(minutes: number): string {
   const normalized = Math.max(0, Math.min(1439, minutes));
@@ -52,17 +52,17 @@ export function minutesToTime(minutes: number): string {
 }
 
 /**
- * Valida un turno individual.
- * Criterios de Aceptación:
- * - AC-SHIFT-01: Hora con formato válido HH:mm.
- * - AC-SHIFT-02: startTime < endTime (Estrictamente cronológico, nunca invertido ni igual).
- * - AC-SHIFT-03: Duración mínima (por defecto 30 minutos).
+ * Validates an individual shift item.
+ * Acceptance Criteria:
+ * - AC-SHIFT-01: Valid HH:mm time format.
+ * - AC-SHIFT-02: startTime < endTime (Strictly chronological, never inverted or zero).
+ * - AC-SHIFT-03: Minimum duration (default: 30 minutes).
  */
 export function validateSingleShift(
   shift: ShiftItem,
   minDurationMin = 30
 ): { isValid: boolean; error?: ShiftValidationError } {
-  // AC-SHIFT-06: Día válido
+  // AC-SHIFT-06: Valid day of week
   if (typeof shift.dayOfWeek !== "number" || shift.dayOfWeek < 0 || shift.dayOfWeek > 6) {
     return {
       isValid: false,
@@ -74,7 +74,7 @@ export function validateSingleShift(
     };
   }
 
-  // AC-SHIFT-01: Formato de hora
+  // AC-SHIFT-01: Time format
   const startMin = timeToMinutes(shift.startTime);
   const endMin = timeToMinutes(shift.endTime);
 
@@ -89,7 +89,7 @@ export function validateSingleShift(
     };
   }
 
-  // AC-SHIFT-02: La hora de inicio NO puede ser igual o posterior a la de fin
+  // AC-SHIFT-02: Start time CANNOT be equal to or later than end time
   if (startMin >= endMin) {
     return {
       isValid: false,
@@ -101,7 +101,7 @@ export function validateSingleShift(
     };
   }
 
-  // AC-SHIFT-03: Duración mínima
+  // AC-SHIFT-03: Minimum duration
   const duration = endMin - startMin;
   if (duration < minDurationMin) {
     return {
@@ -118,10 +118,10 @@ export function validateSingleShift(
 }
 
 /**
- * Valida todos los turnos pertenecientes a un día específico.
- * Criterios de Aceptación:
- * - AC-SHIFT-04: Máximo 3 turnos por día.
- * - AC-SHIFT-05: Sin solapamiento (Overlap) entre turnos del mismo día.
+ * Validates all shifts belonging to a specific day of the week.
+ * Acceptance Criteria:
+ * - AC-SHIFT-04: Maximum 3 shifts per day.
+ * - AC-SHIFT-05: Zero overlap between shifts on the same day.
  */
 export function validateDayShifts(
   dayOfWeek: number,
@@ -132,12 +132,12 @@ export function validateDayShifts(
   const errors: ShiftValidationError[] = [];
   const dayName = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][dayOfWeek] || `Día ${dayOfWeek}`;
 
-  // Si no hay turnos, el día está cerrado (completamente válido)
+  // If no shifts are defined, the day is closed (completely valid)
   if (!shifts || shifts.length === 0) {
     return errors;
   }
 
-  // AC-SHIFT-04: Límite de turnos diarios
+  // AC-SHIFT-04: Daily shift count limit
   if (shifts.length > maxShiftsPerDay) {
     errors.push({
       dayOfWeek,
@@ -146,7 +146,7 @@ export function validateDayShifts(
     });
   }
 
-  // Validar cada turno individualmente
+  // Validate each shift individually
   shifts.forEach((shift, index) => {
     const singleValidation = validateSingleShift(shift, minDurationMin);
     if (!singleValidation.isValid && singleValidation.error) {
@@ -158,8 +158,8 @@ export function validateDayShifts(
     }
   });
 
-  // AC-SHIFT-05: Detección de solapamiento entre turnos
-  // Convertimos a intervalos con minutos para verificar choques
+  // AC-SHIFT-05: Overlap detection between shifts
+  // Map intervals with minutes to inspect collisions
   const parsedIntervals = shifts.map((s, idx) => ({
     idx,
     startTime: s.startTime,
@@ -173,11 +173,11 @@ export function validateDayShifts(
       const a = parsedIntervals[i];
       const b = parsedIntervals[j];
 
-      // Omitir si alguno tiene tiempos corruptos ya reportados
+      // Skip if either interval contains corrupted times already reported
       if (a.start === -1 || a.end === -1 || a.start >= a.end) continue;
       if (b.start === -1 || b.end === -1 || b.start >= b.end) continue;
 
-      // Condición de colisión/solapamiento: a.start < b.end && a.end > b.start
+      // Overlap condition: a.start < b.end && a.end > b.start
       const hasOverlap = a.start < b.end && a.end > b.start;
 
       if (hasOverlap) {
@@ -195,7 +195,7 @@ export function validateDayShifts(
 }
 
 /**
- * Valida la lista completa de turnos semanales de un profesional.
+ * Validates the full weekly working shift schedule for a staff member.
  */
 export function validateAllShifts(
   shifts: ShiftItem[],
@@ -209,7 +209,7 @@ export function validateAllShifts(
     0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [],
   };
 
-  // Agrupar por día
+  // Group by day of week
   for (let day = 0; day <= 6; day++) {
     const dayShifts = shifts.filter((s) => s.dayOfWeek === day);
     const dayValidationErrors = validateDayShifts(day, dayShifts, maxShiftsPerDay, minDurationMin);
@@ -228,8 +228,8 @@ export function validateAllShifts(
 }
 
 /**
- * Limpia y ordena los turnos de manera segura:
- * - Ordena por día (1 a 6, luego 0) y por hora de inicio cronológica.
+ * Safely sanitizes and sorts shifts:
+ * - Orders by day (0 to 6) and by chronological start time.
  */
 export function sanitizeAndSortShifts(shifts: ShiftItem[]): ShiftItem[] {
   return [...shifts].sort((a, b) => {

@@ -25,62 +25,62 @@ function assert(condition: boolean, testName: string, detail?: string) {
 }
 
 console.log("\n=======================================================");
-console.log("SUITE DE PRUEBAS AUTOMATIZADAS: CRITERIOS DE ACEPTACIÓN");
+console.log("AUTOMATED TEST SUITE: BUSINESS ACCEPTANCE CRITERIA");
 console.log("=======================================================\n");
 
 // -------------------------------------------------------------------
-// 1. CRITERIO AC-SHIFT-02: INVARIANTE TEMPORAL (INVERTIDOS Y NULOS)
+// 1. CRITERION AC-SHIFT-02: TEMPORAL INVARIANTS (INVERTED & ZERO-LENGTH)
 // -------------------------------------------------------------------
-console.log("--- 1. Pruebas de Invariante Temporal (Turnos Invertidos y Nulos) ---");
+console.log("--- 1. Temporal Invariants (Inverted & Zero-Length Shifts) ---");
 
-// Caso reportado por el usuario: 20:00 a 19:00
+// Reported user issue: Inverted shift 20:00 to 19:00
 const invertedShift: ShiftItem = { dayOfWeek: 1, startTime: "20:00", endTime: "19:00" };
 const resInverted = validateSingleShift(invertedShift);
 assert(
   !resInverted.isValid && resInverted.error?.type === "INVERTED_TIMES",
-  "AC-SHIFT-02: Rechazo categórico de turno invertido (20:00 a 19:00)",
+  "AC-SHIFT-02: Categorical rejection of inverted shift (20:00 to 19:00)",
   resInverted.error?.message
 );
 
-// Turno nulo: 14:00 a 14:00
+// Zero-length shift: 14:00 to 14:00
 const zeroShift: ShiftItem = { dayOfWeek: 1, startTime: "14:00", endTime: "14:00" };
 const resZero = validateSingleShift(zeroShift);
 assert(
   !resZero.isValid && resZero.error?.type === "INVERTED_TIMES",
-  "AC-SHIFT-02: Rechazo de turno con duración cero (14:00 a 14:00)",
+  "AC-SHIFT-02: Rejection of zero-duration shift (14:00 to 14:00)",
   resZero.error?.message
 );
 
 // -------------------------------------------------------------------
-// 2. CRITERIO AC-SHIFT-03: DURACIÓN MÍNIMA
+// 2. CRITERION AC-SHIFT-03: MINIMUM DURATION
 // -------------------------------------------------------------------
-console.log("\n--- 2. Pruebas de Duración Mínima (AC-SHIFT-03) ---");
+console.log("\n--- 2. Minimum Duration Verification (AC-SHIFT-03) ---");
 
 const shortShift: ShiftItem = { dayOfWeek: 1, startTime: "09:00", endTime: "09:15" };
 const resShort = validateSingleShift(shortShift, 30);
 assert(
   !resShort.isValid && resShort.error?.type === "MIN_DURATION",
-  "AC-SHIFT-03: Rechazo de turno con duración inferior a 30 minutos (09:00 a 09:15)",
+  "AC-SHIFT-03: Rejection of shift shorter than 30 minutes (09:00 to 09:15)",
   resShort.error?.message
 );
 
 const exact30MinShift: ShiftItem = { dayOfWeek: 1, startTime: "09:00", endTime: "09:30" };
 const resExact30 = validateSingleShift(exact30MinShift, 30);
-assert(resExact30.isValid, "AC-SHIFT-03: Aceptación de turno con exactamente 30 minutos (09:00 a 09:30)");
+assert(resExact30.isValid, "AC-SHIFT-03: Acceptance of shift with exactly 30 minutes (09:00 to 09:30)");
 
 // -------------------------------------------------------------------
-// 3. CRITERIO AC-SHIFT-05: SOLAPAMIENTO DE TURNOS (OVERLAP)
+// 3. CRITERION AC-SHIFT-05: INTRA-DAY SHIFT OVERLAP
 // -------------------------------------------------------------------
-console.log("\n--- 3. Pruebas de Solapamiento Intra-Día (AC-SHIFT-05) ---");
+console.log("\n--- 3. Intra-Day Shift Overlap Tests (AC-SHIFT-05) ---");
 
 const overlappingShifts: ShiftItem[] = [
   { dayOfWeek: 1, startTime: "08:30", endTime: "13:00" },
-  { dayOfWeek: 1, startTime: "12:00", endTime: "16:00" }, // Solapa 12:00 - 13:00
+  { dayOfWeek: 1, startTime: "12:00", endTime: "16:00" }, // Overlaps 12:00 - 13:00
 ];
 const resOverlap = validateDayShifts(1, overlappingShifts);
 assert(
   resOverlap.some((e) => e.type === "OVERLAP"),
-  "AC-SHIFT-05: Detección y bloqueo de solapamiento entre turnos (08:30-13:00 y 12:00-16:00)"
+  "AC-SHIFT-05: Detection and blocking of overlapping shifts (08:30-13:00 & 12:00-16:00)"
 );
 
 const duplicateShifts: ShiftItem[] = [
@@ -90,13 +90,13 @@ const duplicateShifts: ShiftItem[] = [
 const resDuplicate = validateDayShifts(1, duplicateShifts);
 assert(
   resDuplicate.some((e) => e.type === "OVERLAP"),
-  "AC-SHIFT-05: Detección y bloqueo de turnos idénticos duplicados"
+  "AC-SHIFT-05: Detection and blocking of duplicate identical shifts"
 );
 
 // -------------------------------------------------------------------
-// 4. CRITERIO AC-SHIFT-04: LÍMITE DE TURNOS DIARIOS
+// 4. CRITERION AC-SHIFT-04: DAILY SHIFT LIMIT
 // -------------------------------------------------------------------
-console.log("\n--- 4. Pruebas de Límite de Turnos Diarios (AC-SHIFT-04) ---");
+console.log("\n--- 4. Daily Shift Limit Verification (AC-SHIFT-04) ---");
 
 const fourShifts: ShiftItem[] = [
   { dayOfWeek: 1, startTime: "07:00", endTime: "09:00" },
@@ -107,33 +107,33 @@ const fourShifts: ShiftItem[] = [
 const resFour = validateDayShifts(1, fourShifts, 3);
 assert(
   resFour.some((e) => e.type === "MAX_SHIFTS"),
-  "AC-SHIFT-04: Bloqueo cuando se intentan configurar más de 3 turnos en un mismo día"
+  "AC-SHIFT-04: Blocking attempts to configure more than 3 shifts on the same day"
 );
 
 // -------------------------------------------------------------------
-// 5. TURNOS VÁLIDOS (CONTINUOS Y PARTIDOS)
+// 5. VALID SHIFTS (CONTINUOUS & SPLIT SCHEDULES)
 // -------------------------------------------------------------------
-console.log("\n--- 5. Pruebas de Horarios Válidos (Jornada Continua y Partido) ---");
+console.log("\n--- 5. Valid Schedules (Continuous & Split Shifts) ---");
 
 const validSplitShifts: ShiftItem[] = [
   { dayOfWeek: 1, startTime: "08:30", endTime: "13:00" },
   { dayOfWeek: 1, startTime: "15:00", endTime: "19:00" },
 ];
 const resSplit = validateDayShifts(1, validSplitShifts);
-assert(resSplit.length === 0, "AC-OK: Turno partido válido (08:30-13:00 y 15:00-19:00) aprobado sin errores");
+assert(resSplit.length === 0, "AC-OK: Valid split shift (08:30-13:00 & 15:00-19:00) approved without errors");
 
 const validContinuousShift: ShiftItem[] = [
   { dayOfWeek: 2, startTime: "09:00", endTime: "18:00" },
 ];
 const resContinuous = validateDayShifts(2, validContinuousShift);
-assert(resContinuous.length === 0, "AC-OK: Jornada continua válida (09:00-18:00) aprobada sin errores");
+assert(resContinuous.length === 0, "AC-OK: Valid continuous shift (09:00-18:00) approved without errors");
 
 // -------------------------------------------------------------------
-// 6. MOTOR DE DISPONIBILIDAD (SLOT ENGINE DEFENSIVE BEHAVIOR)
+// 6. AVAILABILITY ENGINE (DEFENSIVE SLOT ENGINE BEHAVIOR)
 // -------------------------------------------------------------------
-console.log("\n--- 6. Pruebas Defensivas en Slot Engine ---");
+console.log("\n--- 6. Slot Engine Defensive Behavior ---");
 
-// Si entra un turno corrupto 20:00 a 19:00, el motor NO debe generar slots nocturnos
+// If corrupted shift 20:00 to 19:00 enters, slot engine must NOT generate evening slots
 const corruptedSlots = computeAvailableSlotsForStaff({
   dateStr: "2026-11-10",
   shifts: [
@@ -148,10 +148,10 @@ const corruptedSlots = computeAvailableSlotsForStaff({
 });
 assert(
   corruptedSlots.length === 0,
-  "SLOT-DEFENSE: Slot Engine ignora y produce 0 slots para turnos invertidos (20:00 a 19:00)"
+  "SLOT-DEFENSE: Slot Engine ignores and produces 0 slots for inverted shifts (20:00 to 19:00)"
 );
 
-// Caso reportado: A las 21:00 de hoy, no se deben generar slots pasados como 09:00 o 12:00
+// Reported bug: At 21:00 today, past slots like 09:00 or 12:00 must NOT be generated
 const pastTodaySlots = computeAvailableSlotsForStaff({
   dateStr: "2026-11-06",
   shifts: [
@@ -167,30 +167,30 @@ const pastTodaySlots = computeAvailableSlotsForStaff({
 });
 assert(
   pastTodaySlots.length === 0,
-  "AC-TIME-01: Exclusión categórica de turnos del pasado en el mismo día (si son las 21:05, turnos de 09:00 y 12:00 se descartan)"
+  "AC-TIME-01: Categorical exclusion of past slots today (at 21:05, 09:00 & 12:00 slots are discarded)"
 );
 
 // -------------------------------------------------------------------
-// 7. POLÍTICAS DE CANCELACIÓN Y COLISIÓN DE CITAS
+// 7. CANCELLATION POLICIES & APPOINTMENT COLLISIONS
 // -------------------------------------------------------------------
-console.log("\n--- 7. Pruebas de Reglas de Cancelación y Colisión de Citas ---");
+console.log("\n--- 7. Cancellation Policies & Collision Rules ---");
 
 const futureApt = {
   id: "apt-1",
-  startAt: new Date(Date.now() + 2 * 60 * 60 * 1000), // Cita en 2 horas
+  startAt: new Date(Date.now() + 2 * 60 * 60 * 1000), // Appointment in 2 hours
   endAt: new Date(Date.now() + 3 * 60 * 60 * 1000),
   status: "CONFIRMED",
   allowFreeCancel: false,
 };
 
-// Intento de cancelación con menos de 4 horas
+// Cancellation attempt with less than 4 hours notice
 const cancelCheckBlocked = canCustomerCancelAppointment(futureApt, 4);
 assert(
   !cancelCheckBlocked.allowed,
-  "CANCEL-POLICY: Bloqueo de cancelación con menos de 4 horas de anticipación"
+  "CANCEL-POLICY: Cancellation blocked with less than 4 hours advance notice"
 );
 
-// Excepción: Si el doctor reprogramó la cita, el cliente SIEMPRE puede cancelar gratis
+// Exception: If the doctor rescheduled the appointment, customer can ALWAYS cancel for free
 const staffRescheduledApt = {
   ...futureApt,
   status: "RESCHEDULED_BY_STAFF",
@@ -199,43 +199,43 @@ const staffRescheduledApt = {
 const cancelCheckStaffRescheduled = canCustomerCancelAppointment(staffRescheduledApt, 4);
 assert(
   cancelCheckStaffRescheduled.allowed && cancelCheckStaffRescheduled.isFreeCancellationBecauseOfStaff === true,
-  "CANCEL-POLICY: Excepción garantizada si el profesional modificó la cita por imprevisto"
+  "CANCEL-POLICY: Guaranteed penalty-free exception if staff rescheduled due to unplanned event"
 );
 
-// Detección de colisiones
+// Collision detection
 const conflictingAppointments = findConflictingAppointments(
   [futureApt],
-  new Date(futureApt.startAt.getTime() + 15 * 60 * 1000), // Empieza 15 min después
+  new Date(futureApt.startAt.getTime() + 15 * 60 * 1000), // Starts 15 min later
   new Date(futureApt.endAt.getTime() + 15 * 60 * 1000)
 );
 assert(
   conflictingAppointments.length === 1,
-  "CONFLICT-CHECK: Detección atómica de colisión entre citas solapadas"
+  "CONFLICT-CHECK: Atomic detection of collision between overlapping appointments"
 );
 
 // -------------------------------------------------------------------
-// 8. CRITERIO AC-ROLE-01: CONTROL DE ACCESO BASADO EN ROLES (RBAC)
+// 8. CRITERION AC-ROLE-01: ROLE-BASED ACCESS CONTROL (RBAC)
 // -------------------------------------------------------------------
-console.log("\n--- 8. Pruebas de Roles y Separación de Contextos (AC-ROLE-01) ---");
+console.log("\n--- 8. Role Separation & Context Scoping (AC-ROLE-01) ---");
 
-// Las cuentas PROVIDER (Doctores) no son clientes
+// PROVIDER accounts (Doctors) are not customers
 const isProviderAllowedToBook = (userRole: string) => userRole !== "PROVIDER";
 assert(
   !isProviderAllowedToBook("PROVIDER"),
-  "AC-ROLE-01: Bloqueo de auto-agendamiento para cuentas profesionales con rol PROVIDER"
+  "AC-ROLE-01: Self-booking blocked for healthcare provider accounts with PROVIDER role"
 );
 assert(
   isProviderAllowedToBook("CUSTOMER"),
-  "AC-ROLE-01: Cuentas con rol CUSTOMER tienen permitido el flujo de agendamiento público"
+  "AC-ROLE-01: Accounts with CUSTOMER role permitted to use public booking flow"
 );
 
 // -------------------------------------------------------------------
-// RESUMEN FINAL
+// SUMMARY
 // -------------------------------------------------------------------
 console.log("\n=======================================================");
-console.log(`TOTAL PRUEBAS EJECUTADAS: ${passedCount + failedCount}`);
-console.log(`✅ PASARON: ${passedCount}`);
-console.log(`❌ FALLARON: ${failedCount}`);
+console.log(`TOTAL TESTS EXECUTED: ${passedCount + failedCount}`);
+console.log(`✅ PASSED: ${passedCount}`);
+console.log(`❌ FAILED: ${failedCount}`);
 console.log("=======================================================\n");
 
 if (failedCount > 0) {

@@ -17,14 +17,14 @@ model BusinessSettings {
   googleMapsUrl          String   @default("https://maps.google.com")
   phoneWhatsapp          String   @default("+5215500000000")
   currencySymbol         String   @default("$")
-  staffLabel             String   @default("Doctor(a)") // "Doctor(a)" | "Barbero" | "Especialista"
-  slotStepMin            Int      @default(30)            // Intervalo de grilla: 15, 20, 30 min
-  bookingHorizonDays     Int      @default(7)             // Solo 7 días hacia adelante
-  minLeadTimeMinutes     Int      @default(30)            // Margen mínimo antes de la cita (ej. 30 min antes)
-  maxActiveBookings      Int      @default(2)             // Máximo 2 citas futuras activas por cliente
-  minCancelNoticeHours   Int      @default(6)             // No cancelar cuando faltan menos de 6 horas
-  themePrimaryHex        String   @default("#1F1F23")     // Carbón oscuro de la referencia UI
-  themeSurfaceHex        String   @default("#9FA0A6")     // Gris medio de tarjetas/cápsulas
+  staffLabel             String   @default("Doctor(a)") // Dynamic terminology: "Doctor(a)" | "Barbero" | "Especialista"
+  slotStepMin            Int      @default(30)            // Grid interval: 15, 20, 30 min
+  bookingHorizonDays     Int      @default(7)             // Booking horizon limit (e.g. 7 days ahead)
+  minLeadTimeMinutes     Int      @default(30)            // Minimum lead time before appointment start
+  maxActiveBookings      Int      @default(2)             // Anti-hoarding limit: max active upcoming bookings
+  minCancelNoticeHours   Int      @default(6)             // Advance notice required for customer cancellation
+  themePrimaryHex        String   @default("#1F1F23")     // Primary theme brand color
+  themeSurfaceHex        String   @default("#9FA0A6")     // Secondary surface color
   updatedAt              DateTime @updatedAt
 }
 
@@ -32,12 +32,12 @@ model User {
   id             String         @id @default(cuid())
   googleId       String?        @unique
   email          String         @unique
-  passwordHash   String?        // Contraseña cifrada con bcrypt para login seguro
+  passwordHash   String?        // Bcrypt-hashed password for secure email login
   name           String
   avatarUrl      String?
-  phone          String?        // Obligatorio antes de confirmar la 1ra cita
+  phone          String?        // Required contact phone number
   role           String         @default("CUSTOMER") // "CUSTOMER" | "PROVIDER" | "ADMIN"
-  isBlocked     Boolean        @default(false)      // Bloqueo anti-trolls / no-shows
+  isBlocked     Boolean        @default(false)      // Anti-troll lock: blocked due to no-shows
   noShowCount   Int            @default(0)
   completedCount Int           @default(0)
   adminNotes    String?
@@ -55,8 +55,8 @@ model StaffProfile {
   displayName         String
   specialtyTitle      String         @default("Especialista")
   avatarUrl           String?
-  customHorizonDays   Int?           // Ej: este doctor solo abre agenda a 7 días
-  customLeadTimeMin   Int?           // Ej: 15 min si atiende urgencias de madrugada, o 120 min
+  customHorizonDays   Int?           // Specialist custom horizon override (days)
+  customLeadTimeMin   Int?           // Specialist custom lead time override (minutes)
   isActive            Boolean        @default(true)
   sortOrder           Int            @default(0)
 
@@ -70,8 +70,8 @@ model Service {
   id             String         @id @default(cuid())
   name           String
   description    String?
-  durationMin    Int            @default(30) // Editable: 15, 30, 45, 60, 90
-  bufferAfterMin Int            @default(0)  // Tiempo de limpieza post-cita
+  durationMin    Int            @default(30) // Duration: 15, 30, 45, 60, 90 min
+  bufferAfterMin Int            @default(0)  // Turnaround buffer time post-appointment
   price          Float          @default(25.0)
   isActive       Boolean        @default(true)
   sortOrder      Int            @default(0)
@@ -93,9 +93,9 @@ model WorkingShift {
   id        String       @id @default(cuid())
   staffId   String
   staff     StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  dayOfWeek Int          // 0 = Domingo, 1 = Lunes ... 6 = Sábado
-  startTime String       // Formato "HH:mm" (ej. "07:00", "14:30", "01:00")
-  endTime   String       // Formato "HH:mm" (ej. "13:00", "19:30", "06:00")
+  dayOfWeek Int          // 0 = Sunday, 1 = Monday ... 6 = Saturday
+  startTime String       // Format "HH:mm" (e.g. "07:00", "14:30", "01:00")
+  endTime   String       // Format "HH:mm" (e.g. "13:00", "19:30", "06:00")
 
   @@index([staffId, dayOfWeek])
 }
@@ -107,7 +107,7 @@ model TimeOff {
   startAt   DateTime
   endAt     DateTime
   type      String       @default("CUSTOM_BLOCK") // "LATE_START" | "EARLY_LEAVE" | "FULL_DAY_OFF" | "CUSTOM_BLOCK"
-  reason    String?      // Ej: "Cumpleaños", "Entro 9am", "Congreso"
+  reason    String?      // Contextual reason e.g. "Medical Emergency", "Conference"
   createdAt DateTime     @default(now())
 
   @@index([staffId, startAt, endAt])
@@ -125,11 +125,11 @@ model Appointment {
   startAt             DateTime
   endAt               DateTime     // startAt + durationMin + bufferAfterMin
   status              String       @default("CONFIRMED") 
-  // Estados: "CONFIRMED" | "RESCHEDULED_BY_STAFF" | "COMPLETED" | "CANCELLED" | "NO_SHOW"
+  // Statuses: "CONFIRMED" | "RESCHEDULED_BY_STAFF" | "COMPLETED" | "CANCELLED" | "NO_SHOW"
 
-  previousStartAt     DateTime?    // Hora original si el doctor la movió
-  staffMoveReason     String?      // Ej: "El Dr. iniciará atención a las 09:00 AM"
-  allowFreeCancel     Boolean      @default(false) // Cancelación libre si el doctor la movió
+  previousStartAt     DateTime?    // Original timestamp if rescheduled by staff
+  staffMoveReason     String?      // Operational note explaining rescheduling
+  allowFreeCancel     Boolean      @default(false) // Penalty-free cancel if modified by staff
 
   priceSnapshot       Float
   customerNotes       String?

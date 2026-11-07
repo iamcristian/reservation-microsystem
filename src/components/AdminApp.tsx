@@ -76,7 +76,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
   } | null>(null);
   const [savingStaff, setSavingStaff] = useState(false);
 
-  // Toast notifications state (reemplazo moderno y elegante para window.alert)
+  // Toast notifications state (modern replacement for window.alert)
   const [toasts, setToasts] = useState<
     {
       id: string;
@@ -102,7 +102,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Modern confirm modal state (reemplazo para window.confirm)
+  // Modern confirm modal state (replacement for window.confirm)
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -123,7 +123,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
   const [editingLeadTimeMin, setEditingLeadTimeMin] = useState<number>(30);
   const [savingShifts, setSavingShifts] = useState(false);
 
-  // Validación estricta en tiempo real contra Criterios de Aceptación
+  // Strict real-time validation against Acceptance Criteria
   const shiftsValidation = useMemo(() => {
     return validateAllShifts(editingShiftsList, { maxShiftsPerDay: 3, minDurationMin: 30 });
   }, [editingShiftsList]);
@@ -171,7 +171,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
       return;
     }
 
-    // Default inteligente para evitar colisiones automáticas
+    // Intelligent default to prevent automated collisions
     let newStart = "15:00";
     let newEnd = "19:00";
 
@@ -183,7 +183,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
       const lastEndMin = timeToMinutes(lastShift.endTime);
 
       if (lastEndMin > 0 && lastEndMin < 1260) {
-        // Al menos 1 hora de receso tras el último turno
+        // At least 1 hour break after the last shift
         const proposedStartMin = lastEndMin + 60;
         const proposedEndMin = Math.min(1380, proposedStartMin + 240); // 4 horas
         if (proposedEndMin - proposedStartMin >= 30) {
@@ -252,7 +252,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
 
   const handleApplyPreset = (type: "continua" | "partido") => {
     const newShifts: { tempId: string; dayOfWeek: number; startTime: string; endTime: string }[] = [];
-    // Lun-Vie
+    // Mon-Fri
     [1, 2, 3, 4, 5].forEach((d) => {
       if (type === "continua") {
         newShifts.push({
@@ -276,7 +276,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
         });
       }
     });
-    // Sábado mediodía
+    // Saturday half-day
     newShifts.push({
       tempId: "shift-6-sat",
       dayOfWeek: 6,
@@ -515,7 +515,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     }
   };
 
-  // Genera URL de WhatsApp con mensaje automático de cancelación
+  // Generate WhatsApp URL with automated cancellation notice
   const getWhatsAppCancelUrl = (apt: any) => {
     const rawPhone = (apt.customer?.phone || "").replace(/\D/g, "");
     const dateFormatted = new Date(apt.startAt).toLocaleDateString("es-ES", {
@@ -537,7 +537,7 @@ Disculpa los inconvenientes ocasionados. Puedes ingresar a la app para seleccion
     return `https://wa.me/${rawPhone}?text=${encodeURIComponent(text)}`;
   };
 
-  // Genera URL de WhatsApp con mensaje cuando el cliente no asistió (No-Show)
+  // Generate WhatsApp URL with automated absence notice (No-Show)
   const getWhatsAppNoShowUrl = (apt: any) => {
     const rawPhone = (apt.customer?.phone || "").replace(/\D/g, "");
     const dateFormatted = new Date(apt.startAt).toLocaleDateString("es-ES", {

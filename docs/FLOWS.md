@@ -1,139 +1,156 @@
-# 🔄 Diagramas de Flujo y Secuencia del Sistema
+# 🔄 System Sequence Diagrams & Operational Flows
 
-Este documento describe los flujos operativos y transaccionales del sistema modelados mediante **Diagramas de Secuencia Mermaid**.
+This document details the core operational and transactional workflows of the system modeled using **Mermaid Sequence Diagrams**.
 
 ---
 
-## 1. Flujo de Consulta y Cálculo de Disponibilidad (`Slot Engine`)
+## 1. Availability Calculation Flow (`Slot Engine`)
 
-Describe cómo el motor de slots evalúa turnos semanales, imprevistos y citas existentes para producir exclusivamente los horarios libres válidos.
+Describes how the slot engine evaluates weekly working shifts, schedule overrides, and existing appointments to compute purely valid, non-colliding bookable slots.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Cliente as 👤 Cliente (Web/Mobile)
+    actor Customer as 👤 Customer (Web/PWA)
     participant UI as 🖥️ ClientApp (React)
     participant API as 🚀 /api/availability
     participant Engine as ⚙️ Slot Engine
-    participant DB as 💾 Base de Datos (Prisma)
+    participant DB as 💾 Database (Prisma)
 
-    Cliente->>UI: Selecciona Servicio y Fecha
+    Customer->>UI: Selects Service and Date
     UI->>API: GET /api/availability?serviceId=X&date=YYYY-MM-DD
-    API->>DB: Obtener WorkingShifts del día de la semana
-    API->>DB: Obtener TimeOffs (imprevistos) activos en la fecha
-    API->>DB: Obtener Appointments confirmadas en la fecha
-    DB-->>API: Datos consolidados
+    API->>DB: Fetch WorkingShifts for day of week
+    API->>DB: Fetch active TimeOffs for date
+    API->>DB: Fetch confirmed Appointments for date
+    DB-->>API: Consolidated operational data
     
     API->>Engine: computeAvailableSlots(date, shifts, timeOffs, appointments)
-    loop Por cada slot candidato (intervalos de 30 min)
-        Engine->>Engine: ¿Está dentro del turno de trabajo?
-        Engine->>Engine: ¿Es una hora futura (> now + leadTime)?
-        Engine->>Engine: ¿Choca con un bloqueo de imprevisto (TimeOff)?
-        Engine->>Engine: ¿Choca con una cita ya reservada?
+    loop For each candidate slot (30-min intervals)
+        Engine->>Engine: Is slot within working shift hours?
+        Engine->>Engine: Is slot in the future (> now + leadTime)?
+        Engine->>Engine: Does slot collide with an active TimeOff override?
+        Engine->>Engine: Does slot collide with an existing appointment?
     end
-    Engine-->>API: Lista de slots libres (ej: ["09:00", "09:30", "11:00"])
+    Engine-->>API: Array of available slots (e.g. ["09:00", "09:30", "11:00"])
     API-->>UI: HTTP 200 { date, slots: [...] }
-    UI-->>Cliente: Renderiza botones de horarios libres
+    UI-->>Customer: Renders interactive slot buttons
 ```
 
 ---
 
-## 2. Flujo de Reserva Atómica con Asignación Balanceada (`staffId="ANY"`)
+## 2. Atomic Booking Flow with Balanced Assignment (`staffId="ANY"`)
 
-Muestra la resolución automática del profesional cuando el paciente elige "Cualquier Profesional disponible".
+Shows how the system resolves specialist assignment when the customer selects "Any Available Staff".
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Cliente as 👤 Cliente
+    actor Customer as 👤 Customer
     participant UI as 🖥️ ClientApp
     participant API as 🚀 /api/appointments
-    participant DB as 💾 Base de Datos
+    participant DB as 💾 Database
 
-    Cliente->>UI: Selecciona horario y completa datos (Nombre, Tel, Password)
+    Customer->>UI: Chooses time slot and fills form (Name, Phone, Password)
     UI->>API: POST /api/appointments { staffId: "ANY", serviceId, date, time, ... }
     
-    API->>DB: Verificar número de citas activas del cliente
-    alt Citas activas >= 2
-        API-->>UI: HTTP 429 "Máximo 2 citas simultáneas permitidas"
-        UI-->>Cliente: Alerta visual roja en checkout
-    else Citas activas < 2
-        API->>DB: Buscar candidatos con turno activo en el horario
-        loop Por cada profesional candidato
-            API->>DB: Verificar ausencia de citas y bloqueos en ese intervalo
+    API->>DB: Check customer's active appointment count
+    alt Active appointments >= 2
+        API-->>UI: HTTP 429 "Maximum 2 active appointments allowed"
+        UI-->>Customer: Displays inline alert preventing submission
+    else Active appointments < 2
+        API->>DB: Find active staff members qualified for this service
+        API->>DB: Find first staff member with an open slot at this exact time
+        alt No specialist available (race condition collision)
+            API-->>UI: HTTP 409 Conflict "Slot no longer available"
+            UI-->>Customer: Prompts to select another time slot
+        else Staff member identified (e.g. Dra. Sofía Ríos)
+            API->>DB: Atomically insert Appointment record (status: "CONFIRMED")
+            API->>DB: Set secure session cookie
+            DB-->>API: Created appointment record
+            API-->>UI: HTTP 200 { appointment: { id, startAt, staff, ... } }
+            UI-->>Customer: Displays Step 5 confirmation screen (Concentric Circles)
         end
-        API->>DB: Asignar al primer profesional libre disponible
-        API->>DB: INSERT INTO Appointment (status: "CONFIRMED")
-        API->>DB: INSERT INTO Notification (para cliente)
-        DB-->>API: Cita confirmada (ID generado)
-        API-->>UI: HTTP 200 { ok: true, appointment }
-        UI-->>Cliente: Pantalla de confirmación con círculos concéntricos y QR
     end
 ```
 
 ---
 
-## 3. Flujo de Imprevisto "Cerrar día" y Resolución de Colisiones
+## 3. 1-Touch Unplanned Schedule Override Flow (`Close Day`)
 
-Muestra cómo el médico bloquea su agenda y qué sucede con las citas afectadas.
+Illustrates the full day closure procedure, collision detection, and instant unblocking/reopening.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Medico as 🩺 Doctor / Administrador
-    participant AdminUI as 🖥️ AdminApp
+    actor Doctor as 🩺 Doctor / Admin
+    participant UI as 🖥️ AdminApp
     participant API as 🚀 /api/admin/day-override
-    participant DB as 💾 Base de Datos
-    actor Cliente as 👤 Paciente Afectado
+    participant DB as 💾 Database
 
-    Medico->>AdminUI: Clic en "Cerrar día"
-    AdminUI->>AdminUI: Abre modal: Solicita motivo (ej. "Emergencia familiar")
-    Medico->>AdminUI: Confirmar bloqueo
-    AdminUI->>API: POST /api/admin/day-override { type: "FULL_DAY_OFF", reason, resolution: "CANCEL_ALL" }
+    Doctor->>UI: Clicks "Cerrar día" on today's calendar
+    UI->>Doctor: Opens modal to enter contextual reason
+    Doctor->>UI: Types reason ("Medical Emergency") and confirms
+    UI->>API: POST /api/admin/day-override { staffId, date, reason }
     
-    API->>DB: INSERT INTO TimeOff (type: "FULL_DAY_OFF", startAt: 00:00, endAt: 23:59)
-    API->>DB: UPDATE Appointment SET status="CANCELLED", staffMoveReason=motivo WHERE date=fecha
-    API->>DB: INSERT INTO Notification (tipo: "APPOINTMENT_CANCELLED")
-    DB-->>API: Bloqueo aplicado
-    API-->>AdminUI: HTTP 200 { ok: true, cancelledCount }
-    
-    AdminUI-->>Medico: Banner rojo: "Día cerrado • 🔓 Reabrir horario"
-    Note over Cliente,DB: El paciente ingresa a su portal
-    Cliente->>DB: Consulta sus citas (/api/bootstrap)
-    DB-->>Cliente: Notificación: "Tu cita fue cancelada por descanso del profesional"
-    Cliente->>Cliente: Se archiva en "Historial de citas pasadas y archivo (1)"
+    API->>DB: Query appointments affected by this closure
+    alt Conflicting appointments exist
+        API-->>UI: Prompts resolution (Cancel affected appointments & notify)
+        Doctor->>UI: Clicks "Cancelar citas afectadas"
+        UI->>API: POST /api/admin/day-override { resolution: "CANCEL_ALL" }
+        API->>DB: Set appointment statuses to "CANCELLED_BY_PROVIDER"
+        API->>DB: Insert Notification records for affected customers
+    end
+    API->>DB: Insert TimeOff record (type: "FULL_DAY_OFF")
+    DB-->>API: Override saved
+    API-->>UI: HTTP 200 { success: true }
+    UI-->>Doctor: Renders "Día cerrado" banner with "🔓 Reabrir horario" button
+
+    opt Schedule Reopening / Unblocking
+        Doctor->>UI: Clicks "Reabrir horario / Quitar bloqueo"
+        UI->>API: DELETE /api/admin/day-override?staffId=X&date=YYYY-MM-DD
+        API->>DB: Delete TimeOff record
+        API-->>UI: HTTP 200 { success: true }
+        UI-->>Doctor: Restores calendar and frees slots immediately
+    end
 ```
 
 ---
 
-## 4. Flujo de Control Anti-Trolls (Strikes de Inasistencias y Bloqueo)
+## 4. Anti-Troll Control & Account Re-activation Flow (2-Strike System)
 
-Muestra la protección contra clientes que no se presentan a sus citas sin previo aviso.
+Details how unexcused absences trigger automated account locks and the subsequent administrator reset flow.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Medico as 🩺 Doctor / Admin
-    participant AdminUI as 🖥️ AdminApp
+    actor Doctor as 🩺 Doctor
+    participant UI as 🖥️ AdminApp
     participant API as 🚀 /api/admin/appointments/[id]/status
-    participant DB as 💾 Base de Datos
-    actor Cliente as 👤 Paciente
+    participant DB as 💾 Database
+    actor Customer as 👤 Customer
 
-    Note over Medico,Cliente: Pasó la hora de la cita y el paciente no llegó
-    Medico->>AdminUI: Clic en botón "⚠️ No se presentó"
-    AdminUI->>API: POST /api/admin/appointments/[id]/status { status: "NO_SHOW" }
-    
-    API->>DB: UPDATE Appointment SET status="NO_SHOW"
-    API->>DB: UPDATE User SET noShowCount = noShowCount + 1 WHERE id=customerId
+    Doctor->>UI: Patient failed to show up -> Clicks "⚠️ No se presentó"
+    UI->>API: PUT /api/admin/appointments/[id]/status { status: "NO_SHOW" }
+    API->>DB: Update appointment status to "NO_SHOW"
+    API->>DB: Increment customer's noShowCount by 1
     
     alt noShowCount >= 2
-        API->>DB: UPDATE User SET isBlocked = true
-        Note over API,DB: Cuenta bloqueada automáticamente (2 Strikes)
+        API->>DB: Set customer isBlocked = true
+        DB-->>API: Account locked
     end
-    DB-->>API: Estado actualizado
-    API-->>AdminUI: HTTP 200 { ok: true, userBlocked: true }
-    
-    Note over Cliente: Paciente intenta reservar nuevamente en el portal
-    Cliente->>API: POST /api/appointments
-    API-->>Cliente: HTTP 403 "Cuenta restringida por inasistencias. Contacta por WhatsApp."
+    API-->>UI: Status updated
+
+    opt Blocked Customer attempts to book
+        Customer->>API: POST /api/appointments
+        API-->>Customer: HTTP 403 Forbidden ("Account locked due to absences")
+    end
+
+    opt Administrator manually unlocks customer
+        Doctor->>UI: Navigates to "Clientes" tab -> Clicks "Desbloquear"
+        UI->>API: PUT /api/admin/users/[id]/toggle-block
+        API->>DB: Reset noShowCount = 0 and isBlocked = false
+        API->>DB: Archive previous no-shows (status = "NO_SHOW_ARCHIVED")
+        API-->>UI: HTTP 200 { customer: { isBlocked: false } }
+        UI-->>Doctor: Customer badge updated to "Activo (0 faltas)"
+    end
 ```

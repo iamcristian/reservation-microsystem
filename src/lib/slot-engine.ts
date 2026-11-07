@@ -87,8 +87,8 @@ export function computeAvailableSlotsForStaff({
     const shiftStart = parseDateAndTime(dateStr, shift.startTime);
     let shiftEnd = parseDateAndTime(dateStr, shift.endTime);
 
-    // Invariante AC-SHIFT-02: La hora de inicio debe ser estrictamente menor a la hora de fin.
-    // Turnos invertidos (ej. 20:00 a 19:00) o nulos (14:00 a 14:00) son inválidos y no deben generar slots.
+    // Invariant AC-SHIFT-02: Start time must be strictly earlier than end time.
+    // Inverted shifts (e.g. 20:00 to 19:00) or zero-duration shifts (14:00 to 14:00) are invalid and produce 0 slots.
     if (shiftEnd.getTime() <= shiftStart.getTime()) {
       continue;
     }

@@ -1,146 +1,142 @@
-# 🏛️ Arquitectura del Sistema (Diagramas C4 y Principios de Diseño)
+# 🏛️ System Architecture (C4 Models & Design Principles)
 
-Este documento detalla la arquitectura de software de **Sonrisa / Reservas App**, una plataforma moderna de reservas, agendamiento y gestión de citas multi-profesional de alta concurrencia diseñada bajo la metodología de modelado **C4**.
+This document outlines the software architecture of **Sonrisa / Reservas App**, a high-concurrency multi-staff appointment booking and schedule management platform designed following the **C4 model** methodology.
 
 ---
 
-## 1. Nivel 1: Diagrama de Contexto del Sistema (System Context)
+## 1. Level 1: System Context Diagram
 
-El diagrama de contexto ilustra cómo los diferentes actores externos (pacientes/clientes, profesionales del equipo y administradores/dueños) interactúan con la plataforma de reservas y con servicios externos de terceros (Google OAuth, WhatsApp y Google Maps).
+The System Context diagram illustrates how external actors (customers/patients, clinic providers/specialists, and business administrators) interact with the booking platform and integrated external third-party services (Google OAuth, WhatsApp, and Google Maps).
 
 ```mermaid
 flowchart TD
-    Customer["👤 Cliente / Paciente\n(Navegador Web / Mobile PWA)"]
-    Provider["🩺 Profesional / Especialista\n(Portal Restringido /admin)"]
-    Admin["👑 Administrador / Dueño\n(Portal Completo /admin)"]
+    Customer["👤 Customer / Patient\n(Web Browser / Mobile PWA)"]
+    Provider["🩺 Healthcare Provider / Specialist\n(Restricted /admin Portal)"]
+    Admin["👑 Business Owner / Admin\n(Full /admin Portal)"]
     
-    System["🏢 Reservas App Platform\n(Next.js Full-Stack Web App)"]
+    System["🏢 Reservas App Platform\n(Next.js Full-Stack Web Application)"]
     
-    GoogleOAuth["🔐 Google OAuth 2.0\n(Autenticación de personal)"]
-    WhatsAppAPI["💬 WhatsApp Web / App\n(Avisos directos y confirmaciones)"]
-    GoogleMaps["🗺️ Google Maps API\n(Ubicación georreferenciada)"]
+    GoogleOAuth["🔐 Google OAuth 2.0\n(Staff identity & authentication)"]
+    WhatsAppAPI["💬 WhatsApp Web / Mobile App\n(Direct client notices & reminders)"]
+    GoogleMaps["🗺️ Google Maps API\n(Georeferenced branch location)"]
 
-    Customer -->|"Explora catálogo, selecciona turno y reserva cita"| System
-    Provider -->|"Gestiona agenda propia, atiende y bloquea imprevistos"| System
-    Admin -->|"Control total: local, equipo, precios y bloqueos"| System
+    Customer -->|"Browses catalog, selects slot, books appointment"| System
+    Provider -->|"Manages personal agenda, marks attendances & blocks time-offs"| System
+    Admin -->|"Full business control: branding, team, pricing & schedules"| System
 
-    System -->|"Valida tokens e identidades de personal"| GoogleOAuth
-    System -->|"Genera enlaces dinámicos wa.me con mensaje pre-cargado"| WhatsAppAPI
-    System -->|"Provee coordenadas interactivas de la sucursal"| GoogleMaps
+    System -->|"Validates staff OAuth tokens & identities"| GoogleOAuth
+    System -->|"Generates deep-linked wa.me chat URLs"| WhatsAppAPI
+    System -->|"Provides interactive branch location & directions"| GoogleMaps
 ```
 
 ---
 
-## 2. Nivel 2: Diagrama de Contenedores (Container Diagram)
+## 2. Level 2: Container Diagram
 
-Muestra los bloques de software ejecutables de alto nivel, protocolos de red y almacenamiento de datos persistentes.
+Describes the high-level executable software containers, network protocols, and persistence layers that comprise the running application.
 
 ```mermaid
 flowchart LR
-    Browser["🌐 Navegador Web del Usuario\n(Chrome, Safari, Firefox, Edge)\nReact 19 SPA / PWA"]
+    Browser["🌐 User Web Browser\n(Chrome, Safari, Firefox, Edge)\nReact 19 SPA / PWA"]
     
-    subgraph NextServer["🖥️ Servidor de Aplicación (Next.js 16 + Turbopack)"]
-        EdgeRoutes["Rutas Públicas\n(/, /admin, manifest)"]
+    subgraph NextServer["🖥️ Application Server (Next.js 16 + Turbopack)"]
+        EdgeRoutes["Public Route Handlers\n(/, /admin, manifest)"]
         APIRoutes["REST API Endpoints\n(/api/availability, /api/appointments,\n/api/admin/*, /api/auth/*)"]
-        SlotEngine["⚙️ Slot Engine & Business Rules\n(Algoritmo de cálculo de cupos y solapamientos)"]
-        PrismaORM["⚡ Prisma ORM Client\n(Capa de Acceso a Datos Tipada)"]
+        SlotEngine["⚙️ Slot Engine & Business Rules\n(Deterministic availability calculation & overlap guards)"]
+        PrismaORM["⚡ Prisma ORM Client\n(Type-Safe Data Access Layer)"]
     end
 
-    subgraph DataStore["💾 Capa de Persistencia"]
-        DB[("Base de Datos Relacional\nSQLite (Dev) / PostgreSQL (Neon/Supabase en Prod)")]
+    subgraph DataStore["💾 Persistence Layer"]
+        DB[("Relational Database\nSQLite (Dev) / PostgreSQL (Neon/Supabase in Prod)")]
     end
 
     Browser -->|"HTTPS / JSON"| EdgeRoutes
     Browser -->|"Fetch API / REST JSON"| APIRoutes
-    APIRoutes -->|"Consulta disponibilidad y reglas"| SlotEngine
-    APIRoutes -->|"Queries tipadas"| PrismaORM
-    SlotEngine -->|"Lectura de turnos e imprevistos"| PrismaORM
-    PrismaORM -->|"SQL Queries / Pool de Conexiones"| DB
+    APIRoutes -->|"Queries available slots & rules"| SlotEngine
+    APIRoutes -->|"Typed database queries"| PrismaORM
+    SlotEngine -->|"Reads working shifts & overrides"| PrismaORM
+    PrismaORM -->|"SQL Queries / Connection Pool"| DB
 ```
 
 ---
 
-## 3. Nivel 3: Diagrama de Componentes (Component Diagram)
+## 3. Level 3: Component Diagram
 
-Detalla la estructura interna de módulos del frontend y controladores backend.
+Details the internal modular structure of frontend React components and backend API controllers.
 
 ```mermaid
 flowchart TD
-    subgraph ClientComponents["Componentes React (Frontend - src/components)"]
-        ClientApp["ClientApp.tsx\n(Flujo de Reserva de 4 Pasos,\nGestor de Citas y PWA Banner)"]
-        AdminApp["AdminApp.tsx\n(Agenda diaria, Imprevistos 1-Toque,\nGestión de Horarios, Clientes y Servicios)"]
-        BranchMap["BranchMap.tsx\n(Modal interactivo con mapa geolocalizado)"]
+    subgraph ClientComponents["React Components (Frontend - src/components)"]
+        ClientApp["ClientApp.tsx\n(4-Step Booking Wizard,\nCustomer Hub & PWA Banner)"]
+        AdminApp["AdminApp.tsx\n(Dashboard, Multi-Staff Calendar,\n1-Touch Overrides & Shifts Editor)"]
+        BranchMap["BranchMap.tsx\n(Interactive Leaflet Map Modal)"]
     end
 
-    subgraph CoreLibraries["Módulos de Lógica de Negocio (src/lib)"]
-        SlotEng["slot-engine.ts\n(Generación de slots, descarte de horas pasadas,\nrespeto de lead-time y buffer)"]
-        BookingRules["booking-rules.ts\n(Validación de turnos no invertidos,\nantelación de cancelación y conflicto de citas)"]
-        SessionLib["session.ts & auth.ts\n(Manejo de cookies seguras HTTP-only y roles RBAC)"]
-        PrismaLib["prisma.ts\n(Singleton de conexión a base de datos)"]
+    subgraph APIControllers["Next.js Route Handlers (src/app/api)"]
+        AvailabilityAPI["/api/availability\n(Calculates bookable slots by date/staff)"]
+        AppointmentsAPI["/api/appointments\n(Atomic bookings, limit guards & cancellations)"]
+        AdminShiftsAPI["/api/admin/shifts\n(Validates working hours & prevents inverted shifts)"]
+        AdminOverridesAPI["/api/admin/day-override\n(Full-day closures & instant schedule reopening)"]
+        AuthAPI["/api/auth/*\n(Credential login & session management)"]
     end
 
-    subgraph APIControllers["Controladores API (src/app/api)"]
-        AvailCtrl["/api/availability/route.ts"]
-        ApptCtrl["/api/appointments/route.ts"]
-        CancelCtrl["/api/appointments/[id]/cancel/route.ts"]
-        OverrideCtrl["/api/admin/day-override/route.ts"]
-        ShiftsCtrl["/api/admin/shifts/route.ts"]
+    subgraph DomainLib["Core Domain Logic (src/lib)"]
+        SlotEngineModule["slot-engine.ts\n(Pure availability generator,\nlead time filter & past hour exclusion)"]
+        BookingRulesModule["booking-rules.ts\n(Cancellation policies & conflict detection)"]
+        ValidationModule["acceptance-criteria.ts\n(Inverted shift validation & overlap detection)"]
+        SessionModule["session.ts\n(HttpOnly cookie session verification)"]
     end
 
-    ClientApp -->|"Consulta cupos"| AvailCtrl
-    ClientApp -->|"Confirma reserva"| ApptCtrl
-    ClientApp -->|"Cancela cita propia"| CancelCtrl
-    ClientApp -->|"Abre modal mapa"| BranchMap
+    ClientApp --> AvailabilityAPI
+    ClientApp --> AppointmentsAPI
+    ClientApp --> BranchMap
+    AdminApp --> AdminShiftsAPI
+    AdminApp --> AdminOverridesAPI
+    AdminApp --> AuthAPI
 
-    AdminApp -->|"Aplica imprevisto rápido"| OverrideCtrl
-    AdminApp -->|"Modifica turnos semanales"| ShiftsCtrl
-
-    AvailCtrl --> SlotEng
-    ApptCtrl --> BookingRules
-    CancelCtrl --> BookingRules
-    ShiftsCtrl --> BookingRules
-
-    SlotEng --> PrismaLib
-    BookingRules --> PrismaLib
-    OverrideCtrl --> PrismaLib
+    AvailabilityAPI --> SlotEngineModule
+    AppointmentsAPI --> BookingRulesModule
+    AdminShiftsAPI --> ValidationModule
+    AdminOverridesAPI --> BookingRulesModule
 ```
 
 ---
 
-## 4. Nivel 4: Diagrama de Despliegue (Deployment Diagram)
+## 4. Level 4: Deployment & Security Architecture
 
-Configuración recomendada para despliegue serverless de producción en infraestructura moderna (Vercel / Cloudflare / Render + Base de Datos Gestionada).
+Describes the zero-trust production deployment model, secure session handling, and persistence strategies.
 
 ```mermaid
 flowchart TD
-    subgraph CDN["Edge CDN / DNS (Cloudflare / Vercel Edge Network)"]
-        SSL["Terminación SSL/TLS\nCache de Assets Estáticos (.js, .css, webp)"]
+    subgraph EdgeNetwork["Edge & CDN Network (Vercel Global Edge)"]
+        DNS["Anycast DNS & Cloudflare SSL Termination"]
+        StaticAssets["Static Edge CDN\n(PWA Shell, Images, Compiled JS Bundles)"]
     end
 
-    subgraph AppHost["Vercel Serverless Functions / Node.js Container"]
-        ServerRuntime["Node.js 20+ Runtime\nNext.js Server Handler\n(Variables de Entorno Cifradas)"]
+    subgraph Compute["Serverless Compute Nodes"]
+        SSRNode["Next.js Node.js Serverless Functions\n(Dynamic Server-Side Rendering & REST Endpoints)"]
     end
 
-    subgraph ManagedDB["Capa de Base de Datos Gestionada (Neon / Supabase / Turso)"]
-        PostgresDB[("PostgreSQL Serverless\n(Connection Pooling activado\ncon réplicas de lectura)")]
+    subgraph DatabaseCluster["Managed Database Cluster"]
+        PGServerless[("PostgreSQL Serverless Pool\n(Neon.tech / Supabase / AWS RDS)\nSSL Enforced Mode")]
     end
 
-    Internet["🌐 Usuarios de Internet"] -->|"HTTPS (Puerto 443)"| SSL
-    SSL -->|"Forward Dynamic Requests"| ServerRuntime
-    ServerRuntime -->|"DATABASE_URL (Pooling TCP / SSL)"| PostgresDB
+    DNS --> StaticAssets
+    DNS --> SSRNode
+    SSRNode -->|"TLS 1.3 / Prisma Connection Pool"| PGServerless
 ```
 
----
+### 🔒 Key Architectural & Security Decisions
 
-## 5. Principios de Arquitectura e Invariantes Clave
+1. **Decoupled Business Logic (`src/lib`):**
+   The core availability and validation algorithms (`slot-engine.ts`, `booking-rules.ts`, `acceptance-criteria.ts`) are pure TypeScript functions independent of the Next.js framework, enabling instant sub-second unit test execution without spinning up an HTTP server.
 
-1. **Invariante Temporal Estricto:**
-   - La hora de fin de un turno de trabajo siempre debe ser posterior a la hora de inicio ($T_{fin} > T_{inicio}$). El sistema rechaza inmediatamente tanto en frontend como en API turnos invertidos (ej. 20:00 a 19:00).
-2. **Alineación con Fecha Local del Negocio:**
-   - Para evitar desfases de un día por zonas horarias UTC, todas las operaciones de fecha usan formateadores basados en tiempo local (`formatLocalDateYYYYMMDD`).
-3. **Control de Acaparamiento (Anti-Hoarding):**
-   - Ningún paciente puede tener más de **2 citas activas simultáneas**.
-4. **Política Anti-Trolls (2 Strikes):**
-   - Un cliente con 2 faltas registradas (`NO_SHOW`) es bloqueado automáticamente de la plataforma (`isBlocked: true`).
-5. **Separación de Roles (RBAC):**
-   - Las cuentas profesionales (`PROVIDER`) tienen prohibido auto-agendarse como pacientes. Tienen su panel exclusivo en `/admin`.
+2. **Role Invariant Defense-in-Depth:**
+   - Provider accounts (`PROVIDER`) are strictly prohibited from booking appointments as public patients in `/api/appointments` (enforced at the controller level with HTTP 403).
+   - Customers (`CUSTOMER`) attempting to access administrative endpoints or role-switch routes receive an immediate HTTP 403 Forbidden.
+
+3. **Atomic Slot Booking & Collision Prevention:**
+   When booking an appointment, the system evaluates slot validity against existing database records inside an atomic verification flow. If two concurrent users attempt to book the same specialist at the exact same minute, the second request is rejected with HTTP 409 Conflict without creating ghost appointments.
+
+4. **Session Security:**
+   Administrative and customer authentication utilizes HttpOnly, SameSite=Lax session cookies that cannot be accessed by client-side JavaScript, effectively eliminating XSS-based token theft vulnerabilities.

@@ -1,49 +1,49 @@
-# 📋 Especificación de Requerimientos y Reglas del Sistema
+# 📋 System Requirements Specification & Traceability Matrix
 
-Este documento establece los **Requerimientos Funcionales (RF)**, **Requerimientos No Funcionales (RNF)** y las **Reglas de Negocio / Invariantes** del sistema de reservas.
+This document defines the **Functional Requirements (FR)**, **Non-Functional Requirements (NFR)**, and the **Audited Bug Traceability Matrix** for the booking system.
 
 ---
 
-## 1. Requerimientos Funcionales (RF)
+## 1. Functional Requirements (FR)
 
-| ID | Módulo | Descripción | Criterio de Éxito |
+| ID | Domain | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- |
-| **RF-01** | Catálogo | Exponer catálogo público de servicios con precios, duraciones en minutos y buffers. | Carga en < 1s sin autenticación requerida. |
-| **RF-02** | Disponibilidad | Calcular cupos libres (`slots`) en intervalos de 30 min descartando horas pasadas y respetando lead-time. | El día actual no ofrece turnos de horas ya transcurridas. |
-| **RF-03** | Asignación ANY | Permitir al cliente elegir "Cualquier Profesional" para balancear carga automáticamente. | Asigna al primer especialista disponible sin solapamiento. |
-| **RF-04** | Reserva Atómica | Confirmar reservas con nombre, teléfono obligatorio, email y contraseña cifrada. | Previene colisiones simultáneas y genera vista de confirmación. |
-| **RF-05** | Anti-Acaparamiento | Limitar a un máximo de 2 citas activas por cliente en simultáneo. | Bloquea el envío de la tercera cita con aviso explicativo. |
-| **RF-06** | Separación RBAC | Proveer roles diferenciados: `CUSTOMER` (paciente), `PROVIDER` (empleado/doctor) y `ADMIN` (dueño). | Cuentas `PROVIDER` no pueden agendar como pacientes en `/`. |
-| **RF-07** | Turnos Semanales | Permitir al administrador configurar jornadas continuas o partidos por día de la semana. | Valida $T_{fin} > T_{inicio}$ y duración mínima de 30 min. |
-| **RF-08** | Imprevistos 1-Toque | Permitir bloqueos rápidos: "Entrar más tarde", "Salir antes" y "Cerrar día". | Genera `TimeOff` e inhabilita inmediatamente los turnos en el portal público. |
-| **RF-09** | Reabrir Horario | Permitir al administrador eliminar un bloqueo de imprevisto y reabrir el día. | Los turnos vuelven a estar disponibles de inmediato. |
-| **RF-10** | Cancelación Flexible | El cliente puede cancelar su cita con al menos 6 horas de antelación. | Si el médico modificó la cita, la cancelación es siempre libre de penalización. |
-| **RF-11** | Control Anti-Trolls | Acumular faltas (`NO_SHOW`) y bloquear automáticamente al paciente al segundo strike. | El usuario bloqueado no puede reservar y debe contactar por WhatsApp. |
-| **RF-12** | Marca Blanca | Permitir al dueño configurar el nombre del negocio, logotipo, colores y etiqueta del personal. | Cambia dinámicamente "Doctor(a)", "Barbero", "Estilista", etc. |
+| **FR-01** | Catalog | Expose public service catalog with pricing, durations in minutes, and buffer times. | Loads in < 1s without requiring prior authentication. |
+| **FR-02** | Availability | Calculate open booking slots in 30-min increments, excluding past hours and respecting lead time. | Current day never displays slots for past hours. |
+| **FR-03** | Auto-Assign | Allow customers to select "Any Available Staff" (`ANY`) for automatic load balancing. | Assigns the first available specialist without collision. |
+| **FR-04** | Atomic Booking | Confirm bookings with customer name, required phone number, email, and encrypted password. | Prevents race condition collisions and displays confirmation. |
+| **FR-05** | Anti-Hoarding | Restrict customers to a maximum of 2 active concurrent upcoming bookings. | Rejects third booking attempt with clear explanatory notice. |
+| **FR-06** | RBAC Scopes | Provide distinct roles: `CUSTOMER` (patient), `PROVIDER` (staff/doctor), and `ADMIN` (owner). | `PROVIDER` accounts cannot book appointments as customers in `/`. |
+| **FR-07** | Weekly Shifts | Allow administrators to configure continuous or split working shifts per day of week. | Enforces $T_{end} > T_{start}$ and minimum 30-min duration. |
+| **FR-08** | 1-Touch Overrides | Provide quick schedule blocks: "Late Arrival", "Early Departure", and "Close Day". | Creates `TimeOff` record and immediately disables public slots. |
+| **FR-09** | Reopen Schedule | Allow administrators to remove a schedule override and restore open slots. | Working slots immediately become bookable again. |
+| **FR-10** | Flexible Cancel | Customers can cancel bookings with at least 6 hours of advance notice. | If staff modified the appointment, cancellation is penalty-free. |
+| **FR-11** | Anti-Troll Control | Record unexcused absences (`NO_SHOW`) and lock the account on the 2nd strike. | Blocked customers cannot book online and must contact clinic. |
+| **FR-12** | White-Label | Allow business owners to customize branding, logo, colors, and staff label. | Dynamically adapts "Doctor(a)", "Barber", "Stylist", etc. |
 
 ---
 
-## 2. Requerimientos No Funcionales (RNF)
+## 2. Non-Functional Requirements (NFR)
 
-1. **RNF-01 Rendimiento:** El endpoint `/api/availability` debe resolver la disponibilidad en menos de 100 ms para ventanas de 7 días.
-2. **RNF-02 Responsividad:** Diseño adaptativo con Tailwind CSS 4 que se visualiza de forma óptima tanto en dispositivos móviles (375px+) como en pantallas de escritorio anchas (1280px+).
-3. **RNF-03 Seguridad:** Contraseñas cifradas con `bcrypt` (10 rounds de salt), sesiones mediante cookies seguras `HttpOnly` y protección de rutas administrativas contra escalada de privilegios.
-4. **RNF-04 Independencia de Zona Horaria:** Eliminación categórica de desfases UTC mediante manipulación de fechas en tiempo local (`formatLocalDateYYYYMMDD`).
-5. **RNF-05 Disponibilidad Offline PWA:** Configuración de `manifest.webmanifest` y Service Worker para soporte de instalación como Progressive Web App en celulares y tablets.
-6. **RNF-06 Validación Defensiva:** Validación duplicada en cliente (React) y servidor (Next.js API Routes). Cero dependencia de diálogos nativos bloqueantes (`window.alert` / `window.confirm`).
+1. **NFR-01 Performance:** The `/api/availability` endpoint must resolve bookable slots in under 100ms across 7-day calendar horizons.
+2. **NFR-02 Responsiveness:** Adaptive mobile-first layout built with Tailwind CSS 4, rendering cleanly on mobile screens (375px+) as well as widescreen desktops (1280px+).
+3. **NFR-03 Security:** Password hashing using `bcrypt` (10 salt rounds), secure HttpOnly session cookies, and strict privilege escalation prevention.
+4. **NFR-04 Timezone Independence:** Eliminates UTC midnight drift bugs through pure local date arithmetic (`formatLocalDateYYYYMMDD`).
+5. **NFR-05 Progressive Web App (PWA):** Compliant `manifest.webmanifest` and Service Worker registration enabling native installation on iOS and Android.
+6. **NFR-06 Defensive Validation:** Redundant validation on both client (React forms) and server (Next.js route handlers). Zero reliance on blocking native dialogs (`window.alert` / `window.confirm`).
 
 ---
 
-## 3. Matriz de Errores Críticos Auditados y Resueltos
+## 3. Audited Bug Traceability Matrix
 
-| ID Bug | Causa Raíz | Solución Implementada | Estado |
+| Bug ID | Root Cause | Implemented Resolution | Status |
 | :--- | :--- | :--- | :---: |
-| **BUG-01** | Citas pasadas aparecían en "HOY" a las 21:00. | Comparación contra `new Date()` local + `minLeadTimeMinutes`. | ✅ Resuelto |
-| **BUG-02** | "Hoy" mostraba el día siguiente por desfase UTC. | Reemplazo de `toISOString()` por `formatLocalDateYYYYMMDD`. | ✅ Resuelto |
-| **BUG-03** | Cierre de día ofrecía mover citas a las 23:59:59. | Bloqueo estricto de resolución `MOVE_TO_END` en `FULL_DAY_OFF`. | ✅ Resuelto |
-| **BUG-04** | Imprevistos de día cerrado no tenían botón para reabrir. | Banner `TimeOff` interactivo con botón `🔓 Reabrir horario`. | ✅ Resuelto |
-| **BUG-05** | Acordeón de historial oculto cuando `activeApts.length === 0`. | Desacoplamiento del condicional del historial en `ClientApp.tsx`. | ✅ Resuelto |
-| **BUG-06** | Formularios de turnos permitían horas invertidas (20:00 a 19:00). | Validación visual inmediata y rechazo HTTP 400 en `/api/admin/shifts`. | ✅ Resuelto |
-| **BUG-07** | Inconsistencia de rol: Doctora podía auto-agendarse como cliente. | Invariante RBAC: Redirección automática de cuentas `PROVIDER` a `/admin`. | ✅ Resuelto |
-| **BUG-08** | Catálogo de servicios sin botón para editar duración/precios. | Botón `✏️ Editar` en cada tarjeta con modal de actualización reactivo. | ✅ Resuelto |
-| **BUG-09** | Contador verde en píldora de fecha contaba citas de toda la clínica. | Filtro dinámico en píldora por doctor seleccionado + opción "Todo el equipo". | ✅ Resuelto |
+| **BUG-01** | Past appointment slots were shown on "TODAY" late in the evening. | Enforced local `new Date()` + `minLeadTimeMinutes` filtering in `slot-engine.ts`. | ✅ Resolved |
+| **BUG-02** | "Today" button displayed tomorrow's date due to UTC ISO conversion. | Replaced `toISOString()` with local date formatting `formatLocalDateYYYYMMDD`. | ✅ Resolved |
+| **BUG-03** | Full day closure offered moving affected appointments to 23:59:59. | Strictly disallowed `MOVE_TO_END` resolution strategy for `FULL_DAY_OFF`. | ✅ Resolved |
+| **BUG-04** | Closed-day schedule overrides lacked an unblock/reopen action. | Added interactive `TimeOff` card with `🔓 Reopen schedule / Remove block` button. | ✅ Resolved |
+| **BUG-05** | Past appointments accordion was hidden when `activeApts.length === 0`. | Decoupled history drawer rendering condition in `ClientApp.tsx`. | ✅ Resolved |
+| **BUG-06** | Shift form permitted inverted time inputs (e.g., 20:00 to 19:00). | Added inline validation error and HTTP 400 rejection in `/api/admin/shifts`. | ✅ Resolved |
+| **BUG-07** | Role inconsistency: Doctors could self-book appointments as patients. | Enforced RBAC invariant: Automatic redirect of `PROVIDER` accounts to `/admin`. | ✅ Resolved |
+| **BUG-08** | Service catalog lacked an in-place editing modal for price and duration. | Added `✏️ Edit` button on each service card with pre-populated reactive modal. | ✅ Resolved |
+| **BUG-09** | Date pill badge counted clinic-wide appointments instead of selected doctor. | Updated pill count query to filter by selected specialist + "Whole team" mode. | ✅ Resolved |

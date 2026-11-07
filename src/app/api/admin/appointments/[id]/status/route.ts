@@ -61,7 +61,7 @@ export async function PUT(
         },
       });
 
-      // Regla de límite inteligente: si llega a 2 o más inasistencias, auto-bloqueo preventivo
+      // Smart limit rule: if 2 or more no-shows are reached, automatically block customer
       if (updatedUser.noShowCount >= 2 && !updatedUser.isBlocked) {
         updatedUser = await prisma.user.update({
           where: { id: appointment.customerId },

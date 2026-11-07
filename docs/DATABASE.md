@@ -1,25 +1,25 @@
-# 🗄️ Modelo de Base de Datos y Diccionario de Datos
+# 🗄️ Database Architecture & Entity Dictionary
 
-Este documento describe el esquema relacional, modelos de datos, índices y relaciones implementadas en **Prisma ORM**.
+This document details the relational data model, entity schemas, constraints, indexes, and cloud migration procedures implemented with **Prisma ORM**.
 
 ---
 
-## 1. Diagrama Entidad-Relación (Mermaid ERD)
+## 1. Entity-Relationship Diagram (Mermaid ERD)
 
 ```mermaid
 erDiagram
-    BusinessSettings ||--o{ StaffProfile : "pertenece a"
-    User ||--o| StaffProfile : "tiene perfil profesional"
-    User ||--o{ Appointment : "reserva como cliente"
-    User ||--o{ Notification : "recibe"
+    BusinessSettings ||--o{ StaffProfile : "configures"
+    User ||--o| StaffProfile : "has staff profile"
+    User ||--o{ Appointment : "books as customer"
+    User ||--o{ Notification : "receives"
     
-    StaffProfile ||--o{ StaffService : "brinda"
-    StaffProfile ||--o{ WorkingShift : "cumple"
-    StaffProfile ||--o{ TimeOff : "registra imprevisto"
-    StaffProfile ||--o{ Appointment : "atiende"
+    StaffProfile ||--o{ StaffService : "offers"
+    StaffProfile ||--o{ WorkingShift : "works on"
+    StaffProfile ||--o{ TimeOff : "registers time off"
+    StaffProfile ||--o{ Appointment : "conducts"
     
-    Service ||--o{ StaffService : "asignado a"
-    Service ||--o{ Appointment : "objeto de la cita"
+    Service ||--o{ StaffService : "assigned to"
+    Service ||--o{ Appointment : "is booked in"
 
     BusinessSettings {
         int id PK
@@ -58,12 +58,13 @@ erDiagram
         string id PK
         string userId FK
         string displayName
-        string specialtyTitle
+        string titleRole
+        string phoneWhatsapp
         string avatarUrl
+        int orderIndex
+        boolean isActive
         int customHorizonDays
         int customLeadTimeMin
-        boolean isActive
-        int sortOrder
     }
 
     Service {
@@ -73,14 +74,8 @@ erDiagram
         int durationMin
         int bufferAfterMin
         float price
+        int orderIndex
         boolean isActive
-        int sortOrder
-    }
-
-    StaffService {
-        string id PK
-        string staffId FK
-        string serviceId FK
     }
 
     WorkingShift {
@@ -96,32 +91,30 @@ erDiagram
         string staffId FK
         datetime startAt
         datetime endAt
-        string reason
         string type
+        string reason
     }
 
     Appointment {
         string id PK
-        string customerId FK
-        string staffId FK
         string serviceId FK
+        string staffId FK
+        string customerId FK
         datetime startAt
         datetime endAt
         string status
-        float priceSnapshot
-        string customerNotes
-        string staffMoveReason
         boolean allowFreeCancel
-        datetime createdAt
+        string staffMoveReason
+        string customerNotes
     }
 
     Notification {
         string id PK
         string userId FK
-        string appointmentId
+        string appointmentId FK
+        string type
         string title
         string message
-        string type
         boolean isRead
         datetime createdAt
     }
@@ -129,70 +122,146 @@ erDiagram
 
 ---
 
-## 2. Diccionario de Datos
+## 2. Comprehensive Data Dictionary
 
-### Tabla: `User`
-Almacena usuarios autenticados y clientes del sistema.
-- `id` (String / CUID): Identificador único primario.
-- `email` (String / Unique): Correo electrónico del usuario.
-- `passwordHash` (String?): Hash bcrypt para autenticación con contraseña.
-- `name` (String): Nombre completo del paciente o profesional.
-- `role` (String): Rol del usuario (`CUSTOMER`, `PROVIDER`, `ADMIN`).
-- `isBlocked` (Boolean): Flag de control anti-trolls / inasistencias.
-- `noShowCount` (Int): Contador acumulado de faltas sin aviso.
-- `completedCount` (Int): Total de citas asistidas exitosamente.
+### `BusinessSettings` (Global Business & White-Label Configuration)
+Stores the clinic or business profile, brand appearance, and operational booking parameters.
 
-### Tabla: `StaffProfile`
-Perfil público y atributos de cada especialista o colaborador.
-- `id` (String / CUID): Identificador del perfil.
-- `userId` (String? / Unique): Relación 1:1 con la cuenta `User`.
-- `displayName` (String): Nombre profesional visible (ej. *"Dr. Alejandro Vega"*).
-- `specialtyTitle` (String): Título o especialidad (ej. *"Odontología Integral"*).
-- `isActive` (Boolean): Indica si el profesional está habilitado para recibir citas.
-- `sortOrder` (Int): Orden de presentación en el catálogo.
-
-### Tabla: `WorkingShift`
-Horarios habituales de atención por día de la semana.
-- `dayOfWeek` (Int): Día de la semana (0 = Domingo, 1 = Lunes, ..., 6 = Sábado).
-- `startTime` (String): Hora de inicio en formato `HH:mm` (ej. `"09:00"`).
-- `endTime` (String): Hora de fin en formato `HH:mm` (ej. `"13:00"`). Invariante: `endTime > startTime`.
-
-### Tabla: `TimeOff`
-Bloqueos temporales e imprevistos de agenda.
-- `type` (String): Tipo de imprevisto (`LATE_START`, `EARLY_LEAVE`, `FULL_DAY_OFF`).
-- `startAt` (DateTime): Inicio exacto del bloqueo.
-- `endAt` (DateTime): Fin exacto del bloqueo.
-- `reason` (String): Motivo visible para el paciente y la administración.
-
-### Tabla: `Appointment`
-Registro transaccional de reservas.
-- `startAt` (DateTime): Fecha y hora de inicio de la cita.
-- `endAt` (DateTime): Fecha y hora de fin (calculada con duración + buffer).
-- `status` (String): Estado de la cita (`CONFIRMED`, `COMPLETED`, `NO_SHOW`, `NO_SHOW_ARCHIVED`, `CANCELLED`, `RESCHEDULED_BY_STAFF`).
-- `priceSnapshot` (Float): Precio del servicio al momento de la reserva (evita cambios retroactivos).
-- `allowFreeCancel` (Boolean): Excepción de cancelación gratuita por imprevisto del médico.
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `Int` | Primary Key (`@default(1)`) | Singleton configuration identifier |
+| `name` | `String` | Required | Commercial name of the business |
+| `tagline` | `String?` | Optional | Slogan, specialty, or branch description |
+| `addressText` | `String?` | Optional | Street address displayed on customer receipts |
+| `googleMapsUrl`| `String?` | Optional | Direct link to Google Maps / Directions |
+| `phoneWhatsapp`| `String?` | Optional | Official clinic WhatsApp number for notifications |
+| `currencySymbol`| `String` | Default: `"$"` | Display currency symbol (`$`, `Bs`, `€`, `S/.`, etc.) |
+| `staffLabel` | `String` | Default: `"Doctor(a)"` | Dynamic role terminology ("Doctor", "Barbero", etc.) |
+| `slotStepMin` | `Int` | Default: `30` | Interval step between generated bookable slots (in minutes) |
+| `bookingHorizonDays` | `Int` | Default: `7` | Maximum number of days into the future customers can book |
+| `minLeadTimeMinutes` | `Int` | Default: `30` | Minimum advance notice required before a slot start time |
+| `maxActiveBookings` | `Int` | Default: `2` | Anti-hoarding limit: maximum active upcoming bookings per customer |
+| `minCancelNoticeHours` | `Int` | Default: `4` | Hours of advance notice required for standard cancellation |
 
 ---
 
-## 3. Estrategia de Migración a Producción
+### `User` (Identity, Authentication & RBAC)
+Represents all system actors: patients/customers, healthcare providers/specialists, and business administrators.
 
-El proyecto utiliza actualmente SQLite local (`file:./dev.db`) para máxima velocidad y cero fricción en desarrollo local.
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `String` | Primary Key (`cuid`) | Unique user identifier |
+| `googleId` | `String?` | Unique | Google OAuth subject ID for passwordless login |
+| `email` | `String` | Unique, Required | Primary email address |
+| `passwordHash` | `String?` | Optional | Bcrypt hashed password for email/password authentication |
+| `name` | `String` | Required | Full personal or legal name |
+| `phone` | `String?` | Optional | Contact phone number for WhatsApp confirmations |
+| `role` | `String` | Default: `"CUSTOMER"` | RBAC role: `"ADMIN"`, `"PROVIDER"`, or `"CUSTOMER"` |
+| `isBlocked` | `Boolean` | Default: `false` | Anti-troll flag: true if account is locked due to absences |
+| `noShowCount` | `Int` | Default: `0` | Active strike count: unexcused absences recorded |
+| `completedCount` | `Int` | Default: `0` | Total successfully attended appointments |
+| `adminNotes` | `String?` | Optional | Private administrative notes and observations |
 
-Para desplegar en servicios serverless gratuitos en producción:
+---
 
-### Opción A: PostgreSQL Serverless (Neon o Supabase)
-1. Modificar en `prisma/schema.prisma`:
+### `StaffProfile` (Healthcare Provider / Specialist Profile)
+Maintains professional credentials, custom booking horizons, and personal contact details for team members.
+
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `String` | Primary Key (`cuid`) | Unique staff profile identifier |
+| `userId` | `String` | Unique, Foreign Key | Link to authentication account in `User` |
+| `displayName` | `String` | Required | Professional title and name (e.g., "Dr. Alejandro Vega") |
+| `titleRole` | `String` | Required | Specialty or role description (e.g., "Ortodoncia") |
+| `phoneWhatsapp` | `String?`| Optional | Specialist direct phone number |
+| `avatarUrl` | `String?` | Optional | Profile image URL |
+| `orderIndex` | `Int` | Default: `0` | UI sort display order in catalog views |
+| `isActive` | `Boolean` | Default: `true` | Active switch: if false, hidden from public booking |
+| `customHorizonDays` | `Int?` | Optional | Custom booking horizon override for this specialist |
+| `customLeadTimeMin` | `Int?` | Optional | Custom minimum lead time override for this specialist |
+
+---
+
+### `WorkingShift` (Weekly Working Hours)
+Defines repeating weekly shift blocks for each specialist.
+
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `String` | Primary Key (`cuid`) | Unique shift identifier |
+| `staffId` | `String` | Foreign Key (`StaffProfile`) | Reference to the specialist |
+| `dayOfWeek` | `Int` | `0` to `6` | Day of week (`0` = Sunday, `1` = Monday, ..., `6` = Saturday) |
+| `startTime` | `String` | Format: `"HH:mm"` | Shift start time in 24-hour format |
+| `endTime` | `String` | Format: `"HH:mm"` | Shift end time in 24-hour format |
+
+> **Validation Invariant:** Enforces `startTime < endTime` with a minimum duration of 30 minutes, maximum 3 shifts per day, and zero intra-day overlaps.
+
+---
+
+### `TimeOff` (Schedule Overrides & Unplanned Events)
+Stores explicit time blocks during which a specialist cannot attend appointments.
+
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `String` | Primary Key (`cuid`) | Unique override identifier |
+| `staffId` | `String` | Foreign Key (`StaffProfile`) | Reference to specialist |
+| `startAt` | `DateTime` | Required | Start timestamp of the unavailable period |
+| `endAt` | `DateTime` | Required | End timestamp of the unavailable period |
+| `type` | `String` | Default: `"UNPLANNED"` | Override category: `"LATE_START"`, `"EARLY_LEAVE"`, `"FULL_DAY_OFF"` |
+| `reason` | `String?` | Optional | Contextual reason for record keeping and patient notice |
+
+---
+
+### `Appointment` (Booking Records)
+Core operational table recording scheduled consultations and customer visits.
+
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `String` | Primary Key (`cuid`) | Unique appointment identifier |
+| `serviceId` | `String` | Foreign Key (`Service`) | Selected medical or commercial service |
+| `staffId` | `String` | Foreign Key (`StaffProfile`) | Assigned specialist |
+| `customerId` | `String` | Foreign Key (`User`) | Booking patient or customer |
+| `startAt` | `DateTime` | Required | Appointment scheduled start timestamp |
+| `endAt` | `DateTime` | Required | Appointment scheduled end timestamp (includes buffer) |
+| `status` | `String` | Default: `"CONFIRMED"` | Lifecycle state: `"CONFIRMED"`, `"COMPLETED"`, `"CANCELLED"`, `"CANCELLED_BY_PROVIDER"`, `"NO_SHOW"`, `"NO_SHOW_ARCHIVED"` |
+| `allowFreeCancel` | `Boolean` | Default: `false` | True if rescheduled by staff, granting unrestricted customer cancellation |
+| `staffMoveReason` | `String?` | Optional | Reason recorded when modified by clinic staff |
+| `customerNotes` | `String?` | Optional | Special instructions or clinical symptoms provided by patient |
+
+---
+
+## 3. Database Indexes & Query Optimizations
+
+To guarantee sub-15ms response times across the availability calculation engine, the following composite indexes are applied:
+
+1. **`WorkingShift [staffId, dayOfWeek]`**: Accelerates retrieving daily working hours when populating slot calendars.
+2. **`Appointment [staffId, startAt, status]`**: Quickly retrieves active bookings in a given time window to eliminate occupied slots.
+3. **`TimeOff [staffId, startAt, endAt]`**: Optimizes boundary overlap checks for single-day or partial-day closures.
+4. **`Appointment [customerId, startAt, status]`**: Enables instant computation of the customer's active booking count for anti-hoarding limits.
+
+---
+
+## 4. Production Cloud Migration Guide
+
+The Prisma schema is fully database-agnostic. While local development uses SQLite (`file:./dev.db`), production environments utilize high-availability PostgreSQL clusters.
+
+### Step-by-Step Migration (Neon.tech or Supabase):
+
+1. **Provision Database Cluster:**
+   Create a new PostgreSQL project on [Neon](https://neon.tech) or [Supabase](https://supabase.com) with SSL enforcement enabled.
+2. **Update Datasource Provider in `prisma/schema.prisma`:**
    ```prisma
    datasource db {
      provider = "postgresql"
      url      = env("DATABASE_URL")
    }
    ```
-2. Ejecutar migración:
-   ```powershell
-   pnpm prisma migrate dev --name init_postgres
-   pnpm prisma db seed
+3. **Configure Environment Variable in Hosting Provider:**
+   Set `DATABASE_URL` in your Vercel or cloud host environment dashboard:
    ```
-
-### Opción B: Turso (LibSQL Serverless Edge)
-Compatible de forma nativa con el esquema SQLite actual mediante `@prisma/adapter-libsql`.
+   DATABASE_URL="postgres://user:password@ep-sample-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require"
+   ```
+4. **Push Schema to Production Cluster:**
+   ```bash
+   pnpm prisma db push
+   pnpm tsx prisma/seed.ts
+   ```
