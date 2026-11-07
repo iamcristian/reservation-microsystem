@@ -2152,7 +2152,7 @@ Al ingresar con tu correo de Google podrás:
                   name: "",
                   description: "",
                   durationMin: 30,
-                  bufferAfterMin: 10,
+                  bufferAfterMin: 0,
                   price: 30,
                 })
               }
@@ -2908,6 +2908,9 @@ Al ingresar con tu correo de Google podrás:
                     }
                     className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold focus:outline-none"
                   />
+                  <span className="text-[10px] text-zinc-400 block mt-1 leading-tight">
+                    Usa 0 min para citas continuas (ej. 9:00 y 9:30).
+                  </span>
                 </div>
               </div>
 
