@@ -301,6 +301,22 @@ export async function POST(req: Request) {
       }
       targetStaffId = chosenStaffId;
     } else {
+      // Verify that specific staffId is assigned to this service
+      const isAssigned = await prisma.staffService.findUnique({
+        where: {
+          staffId_serviceId: {
+            staffId: targetStaffId,
+            serviceId,
+          },
+        },
+      });
+      if (!isAssigned) {
+        return NextResponse.json(
+          { error: "El profesional seleccionado no ofrece este servicio." },
+          { status: 400 }
+        );
+      }
+
       const check = await isStaffAvailableForSlot(targetStaffId);
       if (!check.ok) {
         return NextResponse.json(

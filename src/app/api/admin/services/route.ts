@@ -90,7 +90,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
-    const { id, name, description, durationMin, bufferAfterMin, price, isActive } =
+    const { id, name, description, durationMin, bufferAfterMin, price, isActive, staffIds } =
       await req.json();
 
     if (!id) {
@@ -137,6 +137,20 @@ export async function PUT(req: Request) {
         isActive: isActive !== undefined ? Boolean(isActive) : undefined,
       },
     });
+
+    if (Array.isArray(staffIds)) {
+      await prisma.staffService.deleteMany({
+        where: { serviceId: id },
+      });
+      if (staffIds.length > 0) {
+        await prisma.staffService.createMany({
+          data: staffIds.map((sId: string) => ({
+            staffId: sId,
+            serviceId: id,
+          })),
+        });
+      }
+    }
 
     return NextResponse.json({ ok: true, service: updated });
   } catch (error: any) {

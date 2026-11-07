@@ -2194,6 +2194,44 @@ Al ingresar con tu correo de Google podrás:
                     )}
                   </div>
 
+                  {/* Servicios asignados al profesional */}
+                  {(() => {
+                    const myServices = services.filter((s: any) =>
+                      st.services?.some((rel: any) => rel.serviceId === s.id) ||
+                      s.staff?.some((rel: any) => rel.staffId === st.id)
+                    );
+                    return (
+                      <div className="p-2.5 rounded-2xl bg-zinc-50 border border-zinc-200 text-xs">
+                        <div className="flex items-center justify-between text-[11px] mb-1">
+                          <span className="font-bold text-zinc-700">
+                            🩺 Servicios que realiza ({myServices.length} de {services.length}):
+                          </span>
+                          {myServices.length === 0 && (
+                            <span className="text-amber-700 font-bold text-[10px]">
+                              ⚠️ Sin servicios asignados (No recibirá citas)
+                            </span>
+                          )}
+                        </div>
+                        {myServices.length > 0 ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {myServices.map((s: any) => (
+                              <span
+                                key={s.id}
+                                className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-800 text-[10px] font-semibold"
+                              >
+                                {s.name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-zinc-500">
+                            Ve a la pestaña &quot;Servicios&quot; y pulsa &quot;✏️ Editar&quot; para asignarle los servicios que realiza.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* Botones de Acción */}
                   <div className="pt-2 border-t border-zinc-100 flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -2263,6 +2301,7 @@ Al ingresar con tu correo de Google podrás:
                   durationMin: 30,
                   bufferAfterMin: 0,
                   price: 30,
+                  staffIds: staffList.map((s: any) => s.id),
                 })
               }
               className="px-3 py-1.5 rounded-full bg-[#1F1F23] text-white text-xs font-semibold flex items-center gap-1 shadow-sm"
@@ -2273,50 +2312,91 @@ Al ingresar con tu correo de Google podrás:
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {services.map((svc: any) => (
-              <div
-                key={svc.id}
-                className="p-4 rounded-3xl border border-zinc-200 bg-white flex items-center justify-between text-xs shadow-sm hover:border-zinc-300 transition-all"
-              >
-                <div>
-                  <div className="font-bold text-sm text-zinc-900">{svc.name}</div>
-                  {svc.description && (
-                    <div className="text-zinc-500 text-[11px] mt-0.5 line-clamp-1">
-                      {svc.description}
+            {services.map((svc: any) => {
+              const assignedStaff = staffList.filter((st: any) =>
+                svc.staff?.some((s: any) => s.staffId === st.id) ||
+                st.services?.some((s: any) => s.serviceId === svc.id)
+              );
+
+              return (
+                <div
+                  key={svc.id}
+                  className="p-4 rounded-3xl border border-zinc-200 bg-white flex flex-col justify-between text-xs shadow-sm hover:border-zinc-300 transition-all gap-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-bold text-sm text-zinc-900">{svc.name}</div>
+                      {svc.description && (
+                        <div className="text-zinc-500 text-[11px] mt-0.5 line-clamp-1">
+                          {svc.description}
+                        </div>
+                      )}
+                      <div className="text-zinc-500 text-[11px] mt-0.5 font-medium">
+                        ⏱️ {svc.durationMin} min{" "}
+                        {svc.bufferAfterMin > 0 && `(+${svc.bufferAfterMin} min limpieza)`}
+                      </div>
                     </div>
-                  )}
-                  <div className="text-zinc-500 text-[11px] mt-0.5 font-medium">
-                    ⏱️ {svc.durationMin} min{" "}
-                    {svc.bufferAfterMin > 0 && `(+${svc.bufferAfterMin} min limpieza)`}
+
+                    <div className="flex items-center gap-2.5 flex-shrink-0">
+                      <span className="font-bold text-sm text-zinc-900">
+                        {settings?.currencySymbol || "$"}
+                        {svc.price.toFixed(2)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentStaffIds = assignedStaff.map((s: any) => s.id);
+                          setServiceModal({
+                            id: svc.id,
+                            name: svc.name,
+                            description: svc.description || "",
+                            durationMin: svc.durationMin,
+                            bufferAfterMin: svc.bufferAfterMin ?? 0,
+                            price: svc.price,
+                            isActive: svc.isActive ?? true,
+                            staffIds:
+                              currentStaffIds.length > 0
+                                ? currentStaffIds
+                                : staffList.map((s: any) => s.id),
+                          });
+                        }}
+                        className="px-2.5 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all"
+                      >
+                        ✏️ Editar
+                      </button>
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                    </div>
+                  </div>
+
+                  {/* Especialistas asignados a este servicio */}
+                  <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-[11px] flex-wrap gap-1.5">
+                    <span className="text-zinc-400 font-semibold uppercase text-[10px]">
+                      Atendido por:
+                    </span>
+                    {assignedStaff.length === 0 ? (
+                      <span className="text-amber-700 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full text-[10px]">
+                        ⚠️ Sin profesionales asignados (No disponible)
+                      </span>
+                    ) : assignedStaff.length === staffList.length ? (
+                      <span className="text-emerald-800 font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10px]">
+                        ✓ Todo el equipo ({assignedStaff.length})
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {assignedStaff.map((st: any) => (
+                          <span
+                            key={st.id}
+                            className="bg-zinc-100 border border-zinc-200 text-zinc-700 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                          >
+                            {st.displayName}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2.5">
-                  <span className="font-bold text-sm text-zinc-900">
-                    {settings?.currencySymbol || "$"}
-                    {svc.price.toFixed(2)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setServiceModal({
-                        id: svc.id,
-                        name: svc.name,
-                        description: svc.description || "",
-                        durationMin: svc.durationMin,
-                        bufferAfterMin: svc.bufferAfterMin ?? 0,
-                        price: svc.price,
-                        isActive: svc.isActive ?? true,
-                      })
-                    }
-                    className="px-2.5 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all"
-                  >
-                    ✏️ Editar
-                  </button>
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -2963,14 +3043,14 @@ Al ingresar con tu correo de Google podrás:
       {/* NEW / EDIT SERVICE MODAL */}
       {serviceModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl relative">
+          <div className="bg-white rounded-[32px] p-6 max-w-md w-full shadow-2xl relative max-h-[92vh] overflow-y-auto">
             <h3 className="text-base font-bold text-zinc-900">
               {serviceModal.id ? "Editar Servicio" : "Crear Nuevo Servicio"}
             </h3>
             <p className="text-xs text-zinc-500 mt-1">
               {serviceModal.id
-                ? "Modifica el nombre, duración, tiempo de limpieza o precio."
-                : "Agrega un servicio con su duración y precio."}
+                ? "Modifica el nombre, duración, precio y qué especialistas lo realizan."
+                : "Agrega un servicio con su duración, precio y profesionales asignados."}
             </p>
 
             <div className="mt-4 space-y-3 text-xs">
@@ -3062,6 +3142,65 @@ Al ingresar con tu correo de Google podrás:
                   className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-sm focus:outline-none"
                 />
               </div>
+
+              {/* ASIGNACIÓN DE ESPECIALISTAS / DOCTORES QUE REALIZAN ESTE SERVICIO */}
+              <div className="pt-2 border-t border-zinc-200">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-bold text-zinc-700 uppercase block">
+                    ¿Quiénes realizan este servicio?
+                  </label>
+                  <span className="text-[10px] text-zinc-500 font-bold">
+                    {(serviceModal.staffIds || []).length} de {staffList.length} asignados
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-500 mb-2">
+                  Solo los profesionales marcados podrán recibir citas de este servicio. A los demás se les bloqueará automáticamente.
+                </p>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto p-2 bg-zinc-50 rounded-2xl border border-zinc-200">
+                  {staffList.map((st: any) => {
+                    const isChecked = (serviceModal.staffIds || []).includes(st.id);
+                    return (
+                      <label
+                        key={st.id}
+                        className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all ${
+                          isChecked
+                            ? "bg-white border border-zinc-300 shadow-2xs"
+                            : "hover:bg-zinc-100/70"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const currentIds = serviceModal.staffIds || [];
+                              const next = e.target.checked
+                                ? [...currentIds, st.id]
+                                : currentIds.filter((id: string) => id !== st.id);
+                              setServiceModal({
+                                ...serviceModal,
+                                staffIds: next,
+                              });
+                            }}
+                            className="w-4 h-4 rounded text-zinc-900 accent-zinc-900 cursor-pointer"
+                          />
+                          <span className="font-bold text-zinc-800 text-xs">
+                            {st.displayName}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-zinc-500 font-medium">
+                          {st.specialtyTitle || "Especialista"}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {(serviceModal.staffIds || []).length === 0 && (
+                  <p className="text-[10px] text-amber-700 font-bold mt-1.5">
+                    ⚠️ Si no seleccionas a ningún profesional, este servicio no se mostrará para reservas en el portal.
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="mt-5 flex gap-2">
@@ -3086,7 +3225,7 @@ Al ingresar con tu correo de Google podrás:
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
                         ...serviceModal,
-                        staffIds: staffList.map((s: any) => s.id),
+                        staffIds: serviceModal.staffIds || [],
                       }),
                     });
                     const data = await res.json().catch(() => ({}));
@@ -3099,7 +3238,7 @@ Al ingresar con tu correo de Google podrás:
                       "success",
                       isEdit ? "¡Servicio Actualizado!" : "¡Servicio Creado!",
                       isEdit
-                        ? "Los cambios del servicio se guardaron correctamente."
+                        ? "Los cambios del servicio y profesionales asignados se guardaron correctamente."
                         : "El nuevo servicio se ha añadido correctamente al catálogo."
                     );
                     onRefresh();

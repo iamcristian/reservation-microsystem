@@ -792,8 +792,22 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       <div className="font-bold text-sm md:text-base leading-tight text-white group-hover:text-emerald-300 transition-colors">
                         {svc.name}
                       </div>
-                      <div className="text-xs text-zinc-300 mt-1">
-                        ⏱️ {svc.durationMin} min
+                      <div className="text-xs text-zinc-300 mt-1 flex items-center gap-2 flex-wrap">
+                        <span>⏱️ {svc.durationMin} min</span>
+                        {(() => {
+                          const doctorsForSvc = staffList.filter((st: any) =>
+                            svc.staff?.some((s: any) => s.staffId === st.id) ||
+                            st.services?.some((s: any) => s.serviceId === svc.id)
+                          );
+                          if (doctorsForSvc.length === 1) {
+                            return (
+                              <span className="text-[10px] bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 px-2 py-0.2 rounded-full font-semibold">
+                                Atendido por {doctorsForSvc[0].displayName}
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     </div>
 
