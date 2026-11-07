@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   ShieldAlert,
   X,
+  CalendarOff,
 } from "lucide-react";
 import BranchMap from "./BranchMap";
 import { formatLocalDateYYYYMMDD } from "@/lib/date-utils";
@@ -812,112 +813,237 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
           )}
 
           {/* STEP 2: SELECT STAFF ONLY */}
-          {step === 2 && (
-            <div className="flex-1 flex flex-col">
-              <div className="mb-4 md:mb-6 flex items-center justify-between bg-zinc-100 rounded-2xl md:rounded-full px-4 py-2.5 md:px-5 md:py-3 text-xs md:text-sm">
-                <span className="font-semibold text-zinc-700 truncate">
-                  {selectedService?.name}
-                </span>
-                <span className="font-bold text-[#1F1F23]">
-                  {settings?.currencySymbol || "$"}
-                  {selectedService?.price?.toFixed(2)} •{" "}
-                  {selectedService?.durationMin} min
-                </span>
-              </div>
+          {step === 2 && (() => {
+            const horizonDays = settings?.bookingHorizonDays || 7;
+            const now = new Date();
+            const windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const windowEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + horizonDays, 23, 59, 59);
 
-              <p className="text-xs md:text-sm text-zinc-600 mb-3 md:mb-4">
-                Elige con quién deseas atenderte o selecciona cualquiera disponible:
-              </p>
+            // Check if staff has an ongoing time-off covering the whole booking window
+            const isStaffOnVacationEntireWindow = (st: any) => {
+              if (st.isActive === false) return true;
+              if (Array.isArray(st.workingShifts) && st.workingShifts.length === 0) return true;
+              if (Array.isArray(st.timeOffs) && st.timeOffs.length > 0) {
+                return st.timeOffs.some((to: any) => {
+                  const s = new Date(to.startAt);
+                  const e = new Date(to.endAt);
+                  return s <= windowStart && e >= windowEnd;
+                });
+              }
+              return false;
+            };
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                {/* ANY Staff option */}
-                <button
-                  onClick={() => {
-                    setSelectedStaffId("ANY");
-                    setStep(3);
-                  }}
-                  className="w-full text-left bg-[#1F1F23] text-white rounded-2xl md:rounded-full p-3 pr-4 flex items-center justify-between shadow-sm hover:opacity-95 transition-all md:col-span-2 lg:col-span-3 hover:shadow-md"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-white/15 text-white flex items-center justify-center flex-shrink-0">
-                      <Sparkles className="w-5 h-5" />
+            const eligibleStaff = staffList.filter((st: any) => {
+              if (selectedService?.id && st.services && st.services.length > 0) {
+                return st.services.some((s: any) => s.serviceId === selectedService.id);
+              }
+              return true;
+            });
+
+            const availableStaff = eligibleStaff.filter(
+              (st: any) => !isStaffOnVacationEntireWindow(st)
+            );
+
+            const vacationStaff = eligibleStaff.filter(
+              (st: any) => isStaffOnVacationEntireWindow(st)
+            );
+
+            return (
+              <div className="flex-1 flex flex-col">
+                <div className="mb-4 md:mb-6 flex items-center justify-between bg-zinc-100 rounded-2xl md:rounded-full px-4 py-2.5 md:px-5 md:py-3 text-xs md:text-sm">
+                  <span className="font-semibold text-zinc-700 truncate">
+                    {selectedService?.name}
+                  </span>
+                  <span className="font-bold text-[#1F1F23]">
+                    {settings?.currencySymbol || "$"}
+                    {selectedService?.price?.toFixed(2)} •{" "}
+                    {selectedService?.durationMin} min
+                  </span>
+                </div>
+
+                {availableStaff.length === 0 ? (
+                  <div className="py-8 px-6 bg-amber-50/70 border border-amber-200/80 rounded-[28px] text-center shadow-xs">
+                    <div className="w-14 h-14 mx-auto mb-3.5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+                      <CalendarOff className="w-7 h-7" />
                     </div>
-                    <div>
-                      <div className="font-bold text-sm md:text-base">
-                        Cualquier {settings?.staffLabel || "Profesional"} disponible
-                      </div>
-                      <div className="text-xs text-zinc-300">
-                        Muestra la mayor cantidad de horarios libres
-                      </div>
+                    <h3 className="font-extrabold text-zinc-900 text-base md:text-lg">
+                      No hay {settings?.staffLabel?.toLowerCase() || "profesionales"} disponibles en este momento
+                    </h3>
+                    <p className="text-xs md:text-sm text-zinc-600 mt-2 max-w-md mx-auto leading-relaxed">
+                      Todo el personal médico se encuentra actualmente en periodo de vacaciones o descanso programado durante la ventana de reserva de los próximos {horizonDays} días.
+                    </p>
+                    <div className="mt-3 p-3 rounded-2xl bg-white/80 border border-amber-200/60 max-w-md mx-auto text-xs text-amber-900 font-medium leading-relaxed">
+                      💡 Para consultar cuándo se reanudan los turnos normales, coordinar una urgencia o solicitar un sobrecupo especial, por favor contacta directamente con el responsable o administración de la clínica.
                     </div>
-                  </div>
-                  <div className="w-9 h-9 rounded-full bg-white text-[#1F1F23] flex items-center justify-center flex-shrink-0">
-                    <ChevronRight className="w-4 h-4" />
-                  </div>
-                </button>
 
-                {/* Individual Staff cards (Only active staff, excluding paused/vacation accounts) */}
-                {(() => {
-                  const activeEligibleStaff = staffList.filter((st: any) => {
-                    if (st.isActive === false) return false;
-                    if (selectedService?.id && st.services && st.services.length > 0) {
-                      return st.services.some((s: any) => s.serviceId === selectedService.id);
-                    }
-                    return true;
-                  });
+                    <div className="mt-5 flex flex-col sm:flex-row items-center justify-center gap-2.5">
+                      {settings?.phoneWhatsapp && (
+                        <a
+                          href={`https://wa.me/${settings.phoneWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
+                            `Hola, quisiera consultar con el responsable de la clínica sobre disponibilidad de citas para ${selectedService?.name || "atención médica"}, ya que el equipo no cuenta con turnos disponibles en línea.`
+                          )}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          <span>Contactar al responsable por WhatsApp</span>
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 font-semibold text-xs transition-all"
+                      >
+                        ← Volver a Servicios
+                      </button>
+                    </div>
 
-                  if (activeEligibleStaff.length === 0) {
-                    return (
-                      <div className="py-8 px-4 bg-zinc-50 rounded-2xl text-center text-xs text-zinc-600 border border-zinc-200 md:col-span-2 lg:col-span-3">
-                        <p className="font-bold text-zinc-800 text-sm">
-                          No hay profesionales disponibles para este servicio
+                    {vacationStaff.length > 0 && (
+                      <div className="mt-6 pt-5 border-t border-amber-200/70 text-left">
+                        <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2.5 text-center">
+                          Equipo en periodo de receso / vacaciones:
                         </p>
-                        <p className="text-[11px] text-zinc-500 mt-1">
-                          El personal asignado se encuentra en periodo de descanso o vacaciones. Por favor elige otro servicio o contáctanos por WhatsApp.
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  return activeEligibleStaff.map((st: any) => (
-                    <button
-                      key={st.id}
-                      onClick={() => {
-                        setSelectedStaffId(st.id);
-                        setStep(3);
-                      }}
-                      className="w-full text-left bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-[#1F1F23] rounded-2xl md:rounded-full p-2.5 pr-4 flex items-center justify-between shadow-2xs transition-all hover:shadow-sm"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-300 border-2 border-white flex-shrink-0">
-                          {st.avatarUrl ? (
-                            <img
-                              src={st.avatarUrl}
-                              alt={st.displayName}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center font-bold text-xs text-zinc-700">
-                              {st.displayName?.slice(0, 2).toUpperCase()}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-lg mx-auto">
+                          {vacationStaff.map((st: any) => (
+                            <div
+                              key={st.id}
+                              className="p-2.5 rounded-xl bg-white/90 border border-zinc-200/80 flex items-center gap-2.5 opacity-80"
+                            >
+                              <div className="w-9 h-9 rounded-full bg-zinc-200 flex items-center justify-center font-bold text-xs text-zinc-600 flex-shrink-0">
+                                {st.avatarUrl ? (
+                                  <img
+                                    src={st.avatarUrl}
+                                    alt={st.displayName}
+                                    className="w-full h-full object-cover rounded-full"
+                                  />
+                                ) : (
+                                  st.displayName?.slice(0, 2).toUpperCase()
+                                )}
+                              </div>
+                              <div className="text-xs truncate">
+                                <div className="font-bold text-zinc-800 truncate">{st.displayName}</div>
+                                <div className="text-[10px] text-amber-700 font-semibold flex items-center gap-1">
+                                  <span>🏖️</span>
+                                  <span>En vacaciones (Sin turnos)</span>
+                                </div>
+                              </div>
                             </div>
-                          )}
+                          ))}
                         </div>
-                        <div>
-                          <div className="font-bold text-sm text-[#1F1F23]">{st.displayName}</div>
-                          <div className="text-xs text-zinc-600">
-                            {st.specialtyTitle}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs md:text-sm text-zinc-600 mb-3 md:mb-4">
+                      Elige con quién deseas atenderte o selecciona cualquiera disponible:
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                      {/* ANY Staff option */}
+                      <button
+                        onClick={() => {
+                          setSelectedStaffId("ANY");
+                          setStep(3);
+                        }}
+                        className="w-full text-left bg-[#1F1F23] text-white rounded-2xl md:rounded-full p-3 pr-4 flex items-center justify-between shadow-sm hover:opacity-95 transition-all md:col-span-2 lg:col-span-3 hover:shadow-md"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-full bg-white/15 text-white flex items-center justify-center flex-shrink-0">
+                            <Sparkles className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="font-bold text-sm md:text-base">
+                              Cualquier {settings?.staffLabel || "Profesional"} disponible
+                            </div>
+                            <div className="text-xs text-zinc-300">
+                              Muestra la mayor cantidad de horarios libres
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="w-9 h-9 rounded-full bg-[#1F1F23] text-white flex items-center justify-center flex-shrink-0">
-                        <ChevronRight className="w-4 h-4" />
-                      </div>
-                    </button>
-                  ));
-                })()}
+                        <div className="w-9 h-9 rounded-full bg-white text-[#1F1F23] flex items-center justify-center flex-shrink-0">
+                          <ChevronRight className="w-4 h-4" />
+                        </div>
+                      </button>
+
+                      {/* Available Staff cards */}
+                      {availableStaff.map((st: any) => (
+                        <button
+                          key={st.id}
+                          onClick={() => {
+                            setSelectedStaffId(st.id);
+                            setStep(3);
+                          }}
+                          className="w-full text-left bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-[#1F1F23] rounded-2xl md:rounded-full p-2.5 pr-4 flex items-center justify-between shadow-2xs transition-all hover:shadow-sm"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-300 border-2 border-white flex-shrink-0">
+                              {st.avatarUrl ? (
+                                <img
+                                  src={st.avatarUrl}
+                                  alt={st.displayName}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center font-bold text-xs text-zinc-700">
+                                  {st.displayName?.slice(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-bold text-sm text-[#1F1F23]">{st.displayName}</div>
+                              <div className="text-xs text-zinc-600">
+                                {st.specialtyTitle}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="w-9 h-9 rounded-full bg-[#1F1F23] text-white flex items-center justify-center flex-shrink-0">
+                            <ChevronRight className="w-4 h-4" />
+                          </div>
+                        </button>
+                      ))}
+
+                      {/* Vacation Staff cards (disabled, non-clickable) */}
+                      {vacationStaff.map((st: any) => (
+                        <div
+                          key={st.id}
+                          className="w-full text-left bg-zinc-50 border border-dashed border-zinc-300 text-zinc-400 rounded-2xl md:rounded-full p-2.5 pr-4 flex items-center justify-between cursor-not-allowed opacity-75"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-200 border-2 border-zinc-300 flex-shrink-0 grayscale">
+                              {st.avatarUrl ? (
+                                <img
+                                  src={st.avatarUrl}
+                                  alt={st.displayName}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center font-bold text-xs text-zinc-500">
+                                  {st.displayName?.slice(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-bold text-sm text-zinc-700 flex items-center gap-1.5">
+                                <span>{st.displayName}</span>
+                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                                  🏖️ En vacaciones
+                                </span>
+                              </div>
+                              <div className="text-xs text-zinc-500">
+                                Sin turnos en los próximos {horizonDays} días
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* STEP 3: SELECT DATE & TIME ONLY */}
           {step === 3 && (
@@ -1037,6 +1163,21 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                             <p className="text-[11px] text-zinc-500 mt-1">
                               No hay turnos libres para este día. Por favor elige otra fecha disponible en el calendario.
                             </p>
+                          </div>
+                        )}
+                        {settings?.phoneWhatsapp && (
+                          <div className="mt-3.5 pt-2.5 border-t border-zinc-200 flex items-center justify-center">
+                            <a
+                              href={`https://wa.me/${settings.phoneWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
+                                `Hola, quisiera consultar con el consultorio sobre disponibilidad de turnos o sobrecupo para ${selectedService?.name || "el servicio"} en fecha ${selectedDateStr}.`
+                              )}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              <span>Consultar disponibilidad por WhatsApp</span>
+                            </a>
                           </div>
                         )}
                       </div>
