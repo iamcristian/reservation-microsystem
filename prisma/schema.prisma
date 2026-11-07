@@ -1,0 +1,155 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model BusinessSettings {
+  id                     Int      @id @default(1)
+  name                   String   @default("Clínica Dental & Estética")
+  tagline                String   @default("Reserva tu cita en segundos")
+  logoUrl                String?
+  addressText            String   @default("Av. Principal 450, Consultorio 302")
+  googleMapsUrl          String   @default("https://maps.google.com")
+  phoneWhatsapp          String   @default("+5215500000000")
+  currencySymbol         String   @default("$")
+  staffLabel             String   @default("Doctor(a)") // "Doctor(a)" | "Barbero" | "Especialista"
+  slotStepMin            Int      @default(30)            // Intervalo de grilla: 15, 20, 30 min
+  bookingHorizonDays     Int      @default(7)             // Solo 7 días hacia adelante
+  minLeadTimeMinutes     Int      @default(30)            // Margen mínimo antes de la cita (ej. 30 min antes)
+  maxActiveBookings      Int      @default(2)             // Máximo 2 citas futuras activas por cliente
+  minCancelNoticeHours   Int      @default(6)             // No cancelar cuando faltan menos de 6 horas
+  themePrimaryHex        String   @default("#1F1F23")     // Carbón oscuro de la referencia UI
+  themeSurfaceHex        String   @default("#9FA0A6")     // Gris medio de tarjetas/cápsulas
+  updatedAt              DateTime @updatedAt
+}
+
+model User {
+  id             String         @id @default(cuid())
+  googleId       String?        @unique
+  email          String         @unique
+  passwordHash   String?        // Contraseña cifrada con bcrypt para login seguro
+  name           String
+  avatarUrl      String?
+  phone          String?        // Obligatorio antes de confirmar la 1ra cita
+  role           String         @default("CUSTOMER") // "CUSTOMER" | "PROVIDER" | "ADMIN"
+  isBlocked     Boolean        @default(false)      // Bloqueo anti-trolls / no-shows
+  noShowCount   Int            @default(0)
+  completedCount Int           @default(0)
+  adminNotes    String?
+  createdAt     DateTime       @default(now())
+
+  staffProfile  StaffProfile?
+  appointments  Appointment[]
+  notifications Notification[]
+}
+
+model StaffProfile {
+  id                  String         @id @default(cuid())
+  userId              String?        @unique
+  user                User?          @relation(fields: [userId], references: [id])
+  displayName         String
+  specialtyTitle      String         @default("Especialista")
+  avatarUrl           String?
+  customHorizonDays   Int?           // Ej: este doctor solo abre agenda a 7 días
+  customLeadTimeMin   Int?           // Ej: 15 min si atiende urgencias de madrugada, o 120 min
+  isActive            Boolean        @default(true)
+  sortOrder           Int            @default(0)
+
+  services            StaffService[]
+  workingShifts       WorkingShift[]
+  timeOffs            TimeOff[]
+  appointments        Appointment[]
+}
+
+model Service {
+  id             String         @id @default(cuid())
+  name           String
+  description    String?
+  durationMin    Int            @default(30) // Editable: 15, 30, 45, 60, 90
+  bufferAfterMin Int            @default(0)  // Tiempo de limpieza post-cita
+  price          Float          @default(25.0)
+  isActive       Boolean        @default(true)
+  sortOrder      Int            @default(0)
+
+  staff          StaffService[]
+  appointments   Appointment[]
+}
+
+model StaffService {
+  staffId   String
+  serviceId String
+  staff     StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service   Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([staffId, serviceId])
+}
+
+model WorkingShift {
+  id        String       @id @default(cuid())
+  staffId   String
+  staff     StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  dayOfWeek Int          // 0 = Domingo, 1 = Lunes ... 6 = Sábado
+  startTime String       // Formato "HH:mm" (ej. "07:00", "14:30", "01:00")
+  endTime   String       // Formato "HH:mm" (ej. "13:00", "19:30", "06:00")
+
+  @@index([staffId, dayOfWeek])
+}
+
+model TimeOff {
+  id        String       @id @default(cuid())
+  staffId   String
+  staff     StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  startAt   DateTime
+  endAt     DateTime
+  type      String       @default("CUSTOM_BLOCK") // "LATE_START" | "EARLY_LEAVE" | "FULL_DAY_OFF" | "CUSTOM_BLOCK"
+  reason    String?      // Ej: "Cumpleaños", "Entro 9am", "Congreso"
+  createdAt DateTime     @default(now())
+
+  @@index([staffId, startAt, endAt])
+}
+
+model Appointment {
+  id                  String       @id @default(cuid())
+  customerId          String
+  customer            User         @relation(fields: [customerId], references: [id])
+  staffId             String
+  staff               StaffProfile @relation(fields: [staffId], references: [id])
+  serviceId           String
+  service             Service      @relation(fields: [serviceId], references: [id])
+
+  startAt             DateTime
+  endAt               DateTime     // startAt + durationMin + bufferAfterMin
+  status              String       @default("CONFIRMED") 
+  // Estados: "CONFIRMED" | "RESCHEDULED_BY_STAFF" | "COMPLETED" | "CANCELLED" | "NO_SHOW"
+
+  previousStartAt     DateTime?    // Hora original si el doctor la movió
+  staffMoveReason     String?      // Ej: "El Dr. iniciará atención a las 09:00 AM"
+  allowFreeCancel     Boolean      @default(false) // Cancelación libre si el doctor la movió
+
+  priceSnapshot       Float
+  customerNotes       String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@index([staffId, startAt, endAt])
+  @@index([customerId, status, startAt])
+}
+
+model Notification {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointmentId String?
+  title         String
+  message       String
+  type          String   // "APPOINTMENT_MOVED" | "APPOINTMENT_CANCELLED" | "REMINDER"
+  isRead        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([userId, isRead])
+}
