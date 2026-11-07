@@ -198,19 +198,23 @@ export async function POST(req: Request) {
     const endOfDay = new Date(`${date}T23:59:59.999`);
     const nextMorning = new Date(endOfDay.getTime() + 6 * 60 * 60 * 1000);
 
-    // Check if specific staff has FULL_DAY_OFF on this date
+    // Check if specific staff has FULL_DAY_OFF or VACATION on this date
     if (staffId && staffId !== "ANY") {
       const fullDayOff = await prisma.timeOff.findFirst({
         where: {
           staffId,
-          type: "FULL_DAY_OFF",
+          type: { in: ["FULL_DAY_OFF", "VACATION"] },
           startAt: { lte: endOfDay },
           endAt: { gte: startOfDay },
         },
       });
       if (fullDayOff) {
         return NextResponse.json(
-          { error: `El profesional no se encuentra atendiendo en esta fecha (${fullDayOff.reason || "Día cerrado"}).` },
+          {
+            error: `El profesional no se encuentra atendiendo en esta fecha (${
+              fullDayOff.reason || "Periodo de vacaciones o día cerrado"
+            }).`,
+          },
           { status: 409 }
         );
       }

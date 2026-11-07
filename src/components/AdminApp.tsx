@@ -419,6 +419,21 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     reason: string;
   } | null>(null);
 
+  // Vacation date range modal state
+  const [vacationModal, setVacationModal] = useState<{
+    open: boolean;
+    staffId: string;
+    startDate: string;
+    endDate: string;
+    reason: string;
+  }>({
+    open: false,
+    staffId: "",
+    startDate: "",
+    endDate: "",
+    reason: "Vacaciones",
+  });
+
   // White-label settings state
   const [settingsForm, setSettingsForm] = useState<any>({ ...settings });
   const [savingSettings, setSavingSettings] = useState(false);
@@ -548,6 +563,74 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
       onRefresh();
     } catch (e: any) {
       showToast("error", "Error", e.message);
+    }
+  };
+
+  // Handle Schedule Vacation Range
+  const handleScheduleVacation = async (resolution?: string) => {
+    if (!vacationModal.startDate || !vacationModal.endDate) {
+      showToast(
+        "warning",
+        "Fechas incompletas",
+        "Por favor selecciona la fecha de inicio y de fin de las vacaciones."
+      );
+      return;
+    }
+    if (vacationModal.startDate > vacationModal.endDate) {
+      showToast(
+        "warning",
+        "Rango inválido",
+        "La fecha de inicio debe ser anterior o igual a la fecha de fin."
+      );
+      return;
+    }
+
+    const startAt = new Date(`${vacationModal.startDate}T00:00:00`);
+    const endAt = new Date(`${vacationModal.endDate}T23:59:59`);
+    const targetStaffId = vacationModal.staffId || selectedStaffId;
+
+    try {
+      const res = await fetch("/api/admin/day-override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          staffId: targetStaffId,
+          type: "VACATION",
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+          reason: vacationModal.reason || "Vacaciones programadas",
+          resolution: resolution || (conflictData ? "CANCEL_ALL" : undefined),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        showToast("error", "No se pudo guardar", data.error || "Error al programar vacaciones.");
+        return;
+      }
+
+      if (data.hasConflicts && !resolution) {
+        setConflictData({
+          open: true,
+          conflicts: data.affectedAppointments || [],
+          blockStart: startAt.toISOString(),
+          blockEnd: endAt.toISOString(),
+          type: "VACATION",
+          reason: vacationModal.reason,
+        });
+        return;
+      }
+
+      setVacationModal((prev) => ({ ...prev, open: false }));
+      setConflictData(null);
+      showToast(
+        "success",
+        "🏖️ ¡Vacaciones Programadas!",
+        `El periodo del ${vacationModal.startDate} al ${vacationModal.endDate} ha quedado reservado y bloqueado para citas.`
+      );
+      onRefresh();
+    } catch (e: any) {
+      showToast("error", "Error al programar vacaciones", e.message);
     }
   };
 
@@ -997,7 +1080,7 @@ Al ingresar con tu correo de Google podrás:
               <span className="text-[10px] text-zinc-400">1-Toque</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 onClick={() =>
                   setImprevistoModal({
@@ -1047,6 +1130,24 @@ Al ingresar con tu correo de Google podrás:
                 <div className="text-[10px] text-red-600 font-semibold">
                   {agendaDateStr === formatLocalDateYYYYMMDD(new Date()) ? "No atender hoy" : `Cerrar ${agendaDateStr}`}
                 </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setVacationModal({
+                    open: true,
+                    staffId: selectedStaffId === "ALL" ? (staffList[0]?.id || "") : selectedStaffId,
+                    startDate: agendaDateStr,
+                    endDate: "",
+                    reason: "Vacaciones programadas",
+                  })
+                }
+                className="p-2.5 rounded-2xl bg-white border border-amber-300 text-zinc-800 text-left hover:border-zinc-800 transition-all shadow-sm"
+              >
+                <div className="text-sm leading-none mb-1">🏖️</div>
+                <div className="text-xs font-bold leading-tight">Vacaciones</div>
+                <div className="text-[10px] text-amber-700 font-semibold">Rango de fechas</div>
               </button>
             </div>
           </div>
@@ -1635,7 +1736,7 @@ Al ingresar con tu correo de Google podrás:
               {selectedStaff?.isActive ? (
                 <>
                   <span>🏖️</span>
-                  <span>Tomar Vacaciones / Pausar Agenda</span>
+                  <span>Pausar Agenda Inmediata</span>
                 </>
               ) : (
                 <>
@@ -1644,6 +1745,121 @@ Al ingresar con tu correo de Google podrás:
                 </>
               )}
             </button>
+          </div>
+
+          {/* Tarjeta de Vacaciones Programadas a Futuro (Rango de Fechas) */}
+          <div className="p-4 rounded-3xl border border-zinc-200 bg-white shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-lg flex-shrink-0">
+                  🏖️
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-zinc-900">
+                    Periodos de Vacaciones Programadas a Futuro
+                  </h3>
+                  <p className="text-xs text-zinc-500">
+                    Planifica tus vacaciones con anticipación (ej. bloquear enero o febrero). Seguirás atendiendo normalmente hoy hasta que comience tu periodo de receso.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setVacationModal({
+                    open: true,
+                    staffId: selectedStaff?.id || selectedStaffId,
+                    startDate: "",
+                    endDate: "",
+                    reason: "Vacaciones",
+                  })
+                }
+                className="flex-shrink-0 px-4 py-2 rounded-full bg-[#1F1F23] hover:bg-black text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5"
+              >
+                <span>+ Programar Vacaciones</span>
+              </button>
+            </div>
+
+            {/* Lista de periodos programados para este profesional */}
+            {(() => {
+              const myVacations = (selectedStaff?.timeOffs || []).filter(
+                (to: any) =>
+                  to.type === "VACATION" ||
+                  new Date(to.endAt).getTime() - new Date(to.startAt).getTime() > 24 * 3600 * 1000
+              );
+
+              if (myVacations.length === 0) {
+                return (
+                  <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200/80 text-xs text-zinc-500 text-center">
+                    No tienes periodos de vacaciones programados. Puedes planificarlos con semanas o meses de anticipación.
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-2 pt-1">
+                  {myVacations.map((vac: any) => {
+                    const startD = new Date(vac.startAt);
+                    const endD = new Date(vac.endAt);
+                    const diffDays =
+                      Math.ceil(
+                        (endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24)
+                      ) || 1;
+                    const isCurrent = startD <= new Date() && endD >= new Date();
+                    const isPast = endD < new Date();
+
+                    return (
+                      <div
+                        key={vac.id}
+                        className={`p-3 rounded-2xl border flex items-center justify-between text-xs flex-wrap gap-2 ${
+                          isCurrent
+                            ? "bg-amber-50 border-amber-300 text-amber-950 font-medium"
+                            : isPast
+                            ? "bg-zinc-50 border-zinc-200 text-zinc-400"
+                            : "bg-blue-50/70 border-blue-200 text-blue-950"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">🏖️</span>
+                          <div>
+                            <div className="font-bold flex items-center gap-2 flex-wrap">
+                              <span>
+                                {vac.reason || "Vacaciones programadas"} ({diffDays} {diffDays === 1 ? "día" : "días"})
+                              </span>
+                              {isCurrent && (
+                                <span className="px-2 py-0.2 rounded-full bg-amber-200 text-amber-900 text-[10px] font-extrabold uppercase">
+                                  En curso ahora
+                                </span>
+                              )}
+                              {!isCurrent && !isPast && (
+                                <span className="px-2 py-0.2 rounded-full bg-blue-200 text-blue-900 text-[10px] font-extrabold uppercase">
+                                  Programada a futuro
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] opacity-80 mt-0.5">
+                              📅 Del {startD.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}{" "}
+                              al {endD.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {!isPast && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTimeOff(vac.id)}
+                            className="px-3 py-1.5 rounded-full bg-white hover:bg-red-50 text-red-700 border border-red-200 text-[11px] font-bold transition-all shadow-2xs"
+                          >
+                            🔓 Cancelar y reabrir fechas
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Banner de Edición Activa */}
@@ -2171,6 +2387,41 @@ Al ingresar con tu correo de Google podrás:
                           </b>
                           {linkedUser?.phone ? ` • 📱 ${linkedUser.phone}` : ""}
                         </div>
+                        {(() => {
+                          const futureVacations = (st.timeOffs || [])
+                            .filter(
+                              (to: any) =>
+                                to.type === "VACATION" ||
+                                new Date(to.endAt).getTime() -
+                                  new Date(to.startAt).getTime() >
+                                  24 * 3600 * 1000
+                            )
+                            .filter((to: any) => new Date(to.endAt) >= new Date());
+
+                          if (futureVacations.length === 0) return null;
+
+                          return (
+                            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                              {futureVacations.map((v: any) => (
+                                <span
+                                  key={v.id}
+                                  className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold"
+                                >
+                                  🏖️ Vacaciones:{" "}
+                                  {new Date(v.startAt).toLocaleDateString("es-ES", {
+                                    day: "numeric",
+                                    month: "short",
+                                  })}{" "}
+                                  al{" "}
+                                  {new Date(v.endAt).toLocaleDateString("es-ES", {
+                                    day: "numeric",
+                                    month: "short",
+                                  })}
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -2264,7 +2515,23 @@ Al ingresar con tu correo de Google podrás:
                             : "bg-emerald-600 hover:bg-emerald-700 text-white"
                         }`}
                       >
-                        {st.isActive ? "🏖️ Pausar (Vacaciones)" : "🟢 Reanudar atención"}
+                        {st.isActive ? "Pausar cuenta" : "🟢 Reanudar atención"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setVacationModal({
+                            open: true,
+                            staffId: st.id,
+                            startDate: "",
+                            endDate: "",
+                            reason: "Vacaciones programadas",
+                          })
+                        }
+                        className="px-3 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all shadow-2xs"
+                      >
+                        🏖️ Programar Vacaciones
                       </button>
                     </div>
 
@@ -3023,7 +3290,11 @@ Al ingresar con tu correo de Google podrás:
               )}
 
               <button
-                onClick={() => handleQuickImprevisto("CANCEL_ALL")}
+                onClick={() =>
+                  conflictData.type === "VACATION"
+                    ? handleScheduleVacation("CANCEL_ALL")
+                    : handleQuickImprevisto("CANCEL_ALL")
+                }
                 className="w-full py-2.5 rounded-full bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold"
               >
                 Cancelar citas afectadas y notificar al cliente
@@ -3034,6 +3305,123 @@ Al ingresar con tu correo de Google podrás:
                 className="w-full py-2 rounded-full text-zinc-500 text-xs font-medium hover:bg-zinc-100"
               >
                 Volver atrás sin bloquear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VACATION DATE RANGE MODAL */}
+      {vacationModal.open && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl relative border border-zinc-200">
+            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center mx-auto mb-2 text-2xl">
+              🏖️
+            </div>
+            <h3 className="text-base font-bold text-center text-zinc-900">
+              Programar Vacaciones o Receso
+            </h3>
+            <p className="text-xs text-zinc-500 text-center mt-1">
+              Selecciona el rango de fechas. El sistema bloqueará automáticamente nuevas reservas en ese periodo, mientras sigues atendiendo con normalidad hoy.
+            </p>
+
+            <div className="mt-4 space-y-3 text-xs">
+              {/* Doctor / Staff selection if Admin */}
+              {isOwnerAdmin && staffList.length > 1 && (
+                <div>
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
+                    Profesional
+                  </label>
+                  <select
+                    value={vacationModal.staffId || selectedStaffId}
+                    onChange={(e) =>
+                      setVacationModal({ ...vacationModal, staffId: e.target.value })
+                    }
+                    className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-xs bg-white focus:outline-none"
+                  >
+                    {staffList.map((st: any) => (
+                      <option key={st.id} value={st.id}>
+                        {st.displayName} ({st.specialtyTitle || "Especialista"})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
+                    Desde (Inicio)
+                  </label>
+                  <input
+                    type="date"
+                    value={vacationModal.startDate}
+                    onChange={(e) =>
+                      setVacationModal({ ...vacationModal, startDate: e.target.value })
+                    }
+                    className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-xs focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
+                    Hasta (Retorno)
+                  </label>
+                  <input
+                    type="date"
+                    min={vacationModal.startDate}
+                    value={vacationModal.endDate}
+                    onChange={(e) =>
+                      setVacationModal({ ...vacationModal, endDate: e.target.value })
+                    }
+                    className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
+                  Motivo / Nota (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={vacationModal.reason}
+                  onChange={(e) =>
+                    setVacationModal({ ...vacationModal, reason: e.target.value })
+                  }
+                  placeholder="Ej. Vacaciones de verano / Viaje / Congreso"
+                  className="w-full p-2.5 rounded-2xl border border-zinc-300 text-xs focus:outline-none"
+                />
+              </div>
+
+              {vacationModal.startDate &&
+                vacationModal.endDate &&
+                vacationModal.startDate <= vacationModal.endDate && (
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 font-medium">
+                    🏖️ Se bloquearán{" "}
+                    {Math.ceil(
+                      (new Date(vacationModal.endDate).getTime() -
+                        new Date(vacationModal.startDate).getTime()) /
+                        (1000 * 60 * 60 * 24)
+                    ) + 1}{" "}
+                    días para reservas en línea.
+                  </div>
+                )}
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleScheduleVacation()}
+                className="flex-1 py-3 rounded-full bg-[#1F1F23] hover:bg-black text-white text-xs font-semibold transition-all shadow-sm"
+              >
+                Confirmar Vacaciones
+              </button>
+              <button
+                type="button"
+                onClick={() => setVacationModal((prev) => ({ ...prev, open: false }))}
+                className="py-3 px-4 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold transition-all"
+              >
+                Cancelar
               </button>
             </div>
           </div>

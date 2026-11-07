@@ -51,12 +51,12 @@ export async function POST(req: Request) {
     // 2. Apply Resolution if conflicts exist
     if (conflicting.length > 0 && resolution) {
       if (resolution === "MOVE_TO_END") {
-        // Invariant: Appointments cannot be moved to end of day if full day is closed or early departure (endAt = 23:59:59)
-        if (type === "FULL_DAY_OFF" || type === "EARLY_LEAVE" || endDate.getHours() >= 22) {
+        // Invariant: Appointments cannot be moved to end of day if full day is closed, vacation, or early departure (endAt = 23:59:59)
+        if (type === "FULL_DAY_OFF" || type === "VACATION" || type === "EARLY_LEAVE" || endDate.getHours() >= 22) {
           return NextResponse.json(
             {
               error:
-                "No es posible mover citas para después del bloqueo cuando se cierra el resto de la jornada. Selecciona cancelar las citas afectadas.",
+                "No es posible mover citas para después del bloqueo cuando se cierra la jornada o son vacaciones. Selecciona cancelar las citas afectadas.",
             },
             { status: 400 }
           );
