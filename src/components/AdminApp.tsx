@@ -29,6 +29,7 @@ import {
   MapPin,
 } from "lucide-react";
 import BranchMap from "./BranchMap";
+import InteractiveMapPicker from "./InteractiveMapPicker";
 import { formatLocalDateYYYYMMDD } from "@/lib/date-utils";
 import {
   validateAllShifts,
@@ -2549,53 +2550,51 @@ Al ingresar con tu correo de Google podrás:
               />
             </div>
 
-            <div className="border-[1.5px] border-zinc-300 bg-[#F4F4F6] rounded-2xl px-4 py-2">
-              <label className="text-[10px] font-bold text-zinc-500 uppercase block">
-                Enlace de Google Maps
-              </label>
-              <input
-                type="url"
-                value={settingsForm?.googleMapsUrl || ""}
-                onChange={(e) =>
-                  setSettingsForm({
-                    ...settingsForm,
-                    googleMapsUrl: e.target.value,
-                  })
-                }
-                className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
-              />
-            </div>
-
-            {/* Previsualización del Mapa y Preset de Cochabamba */}
-            <div className="p-3 bg-white rounded-2xl border border-zinc-200 shadow-2xs space-y-2">
+            {/* Interactive Map Picker & Google Maps Integration */}
+            <div className="p-3.5 bg-white rounded-2xl border border-zinc-200 shadow-2xs space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-zinc-700 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-rose-600" />
-                  Previsualización del Mapa (Web)
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSettingsForm({
-                      ...settingsForm,
-                      addressText: "Av. Simón López esq. Av. Beijing, Cochabamba, Bolivia",
-                      googleMapsUrl: "https://www.google.com/maps/search/?api=1&query=-17.3713,-66.1742",
-                    })
-                  }
-                  className="text-[10px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-200 transition-all"
-                >
-                  📍 Usar Cochabamba (Norte)
-                </button>
+                <div>
+                  <span className="text-xs font-bold text-zinc-900 flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-rose-600" />
+                    Ubicación Interactiva en el Mapa
+                  </span>
+                  <p className="text-[11px] text-zinc-500 mt-0.5">
+                    Haz clic en cualquier punto del mapa, arrastra el pin o busca una calle para fijar la ubicación exacta.
+                  </p>
+                </div>
               </div>
 
-              <BranchMap
-                name={settingsForm?.name || "Clínica & Reservas"}
-                addressText={settingsForm?.addressText || "Av. Simón López esq. Av. Beijing, Cochabamba, Bolivia"}
-                lat={-17.3713}
-                lng={-66.1742}
-                googleMapsUrl={settingsForm?.googleMapsUrl}
-                height="180px"
+              <InteractiveMapPicker
+                initialUrl={settingsForm?.googleMapsUrl}
+                onLocationChange={(lat, lng, googleMapsUrl, suggestedAddress) => {
+                  setSettingsForm((prev: any) => ({
+                    ...prev,
+                    googleMapsUrl,
+                    ...(suggestedAddress && (!prev.addressText || prev.addressText.includes("Simón López"))
+                      ? { addressText: suggestedAddress }
+                      : {}),
+                  }));
+                }}
+                height="240px"
               />
+
+              <div className="border-[1.5px] border-zinc-200 bg-[#F4F4F6] rounded-xl px-3 py-2">
+                <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-0.5">
+                  Enlace Generado de Google Maps (Sincronizado Automáticamente)
+                </label>
+                <input
+                  type="url"
+                  value={settingsForm?.googleMapsUrl || ""}
+                  onChange={(e) =>
+                    setSettingsForm({
+                      ...settingsForm,
+                      googleMapsUrl: e.target.value,
+                    })
+                  }
+                  placeholder="https://www.google.com/maps/search/?api=1&query=..."
+                  className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                />
+              </div>
             </div>
 
             <div className="border-[1.5px] border-zinc-300 bg-[#F4F4F6] rounded-2xl px-4 py-2">

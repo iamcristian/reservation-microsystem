@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { MapPin, Navigation, Copy, Check } from "lucide-react";
+import { parseCoordinatesFromUrl } from "./InteractiveMapPicker";
 
 interface BranchMapProps {
   name?: string;
@@ -17,14 +18,19 @@ interface BranchMapProps {
 export default function BranchMap({
   name = "Clínica & Reservas",
   addressText = "Av. Simón López esq. Av. Beijing, Cochabamba, Bolivia",
-  lat = -17.3713,
-  lng = -66.1742,
+  lat: propLat,
+  lng: propLng,
   googleMapsUrl,
   height = "260px",
   compact = false,
   className = "",
 }: BranchMapProps) {
   const [copied, setCopied] = useState(false);
+
+  // Extract real coordinates dynamically from googleMapsUrl if present
+  const parsedCoords = parseCoordinatesFromUrl(googleMapsUrl);
+  const lat = parsedCoords?.lat ?? (propLat ?? -17.3713);
+  const lng = parsedCoords?.lng ?? (propLng ?? -66.1742);
 
   // Open exact location pin without calculating route or directions
   const exactMapsUrl =
