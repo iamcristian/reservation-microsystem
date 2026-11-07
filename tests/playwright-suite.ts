@@ -130,8 +130,8 @@ async function runBrowserTests() {
     // TC-03: Sábado Disponible para Dr. Alejandro Vega vs Domingo Cerrado
     // ========================================================================
     console.log("\n--- TC-03: Horarios de Sábado (09:00-13:00) vs Domingo Cerrado ---");
-    // Buscar píldora de Sábado
-    const satPills = await page.$$("button:has-text('SÁB')");
+    // Buscar píldora de Sábado (o HOY si la prueba corre en sábado)
+    const satPills = await page.$$("button:has-text('SÁB'), button:has-text('HOY')");
     if (satPills.length > 0) {
       await satPills[0].click();
       await page.waitForTimeout(500);
@@ -255,10 +255,10 @@ async function runBrowserTests() {
     if (anyStaff2) await anyStaff2.click();
     await page.waitForTimeout(300);
 
-    // Buscar otro turno libre diurno (>= 10:00)
+    // Buscar otro turno libre diurno (>= 10:00) en fecha posterior
     const pills2 = await page.$$("div.pill-slider button");
     let chosen2 = null;
-    for (const pill of pills2) {
+    for (const pill of pills2.slice(1)) {
       await pill.click();
       await page.waitForTimeout(200);
       const slots = await page.$$("div.grid-cols-3 button, div.grid-cols-4 button");
@@ -339,10 +339,12 @@ async function runBrowserTests() {
     const doctorPage = await doctorContext.newPage();
 
     await doctorPage.goto(`${BASE_URL}/admin`, { waitUntil: "networkidle" });
-    const sofiaCard = await doctorPage.$("button:has-text('Dra. Sofía Ríos')");
-    if (sofiaCard) {
-      await sofiaCard.click();
-      await doctorPage.waitForTimeout(800);
+    const sofiaEmail = await doctorPage.$("input[type='email']");
+    if (sofiaEmail) {
+      await doctorPage.fill("input[type='email']", "sofia@sonrisa.com");
+      await doctorPage.fill("input[placeholder='••••••••']", "Doctor123!");
+      await doctorPage.click("button:has-text('Ingresar al Panel')");
+      await doctorPage.waitForTimeout(1000);
     }
 
     const doctorBadge = await doctorPage.$("text=MODO EMPLEADO / DOCTOR");
@@ -368,10 +370,12 @@ async function runBrowserTests() {
     const adminPage = await adminContext.newPage();
 
     await adminPage.goto(`${BASE_URL}/admin`, { waitUntil: "networkidle" });
-    const adminCard = await adminPage.$("button:has-text('Dr. Alejandro Vega')");
-    if (adminCard) {
-      await adminCard.click();
-      await adminPage.waitForTimeout(800);
+    const adminEmail = await adminPage.$("input[type='email']");
+    if (adminEmail) {
+      await adminPage.fill("input[type='email']", "alejandro@sonrisa.com");
+      await adminPage.fill("input[placeholder='••••••••']", "Admin123!");
+      await adminPage.click("button:has-text('Ingresar al Panel')");
+      await adminPage.waitForTimeout(1000);
     }
 
     const adminBadge = await adminPage.$("text=ADMIN / DUEÑO PRINCIPAL");
