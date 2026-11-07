@@ -18,7 +18,13 @@ export async function PUT(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { staffId, shifts, customHorizonDays, customLeadTimeMin } = body;
+    const {
+      staffId,
+      shifts,
+      customHorizonDays,
+      customLeadTimeMin,
+      isActive,
+    } = body;
 
     if (!staffId) {
       return NextResponse.json({ error: "Falta el parámetro obligatorio staffId" }, { status: 400 });
@@ -92,6 +98,7 @@ export async function PUT(req: Request) {
       data: {
         customHorizonDays: customHorizonDays !== undefined ? Number(customHorizonDays) : undefined,
         customLeadTimeMin: customLeadTimeMin !== undefined ? Number(customLeadTimeMin) : undefined,
+        isActive: isActive !== undefined ? Boolean(isActive) : undefined,
       },
     });
 

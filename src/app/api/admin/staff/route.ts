@@ -102,6 +102,69 @@ export async function POST(req: Request) {
   }
 }
 
+export async function PATCH(req: Request) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || (user.role !== "ADMIN" && user.role !== "PROVIDER")) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const {
+      staffId,
+      isActive,
+      displayName,
+      specialtyTitle,
+      avatarUrl,
+      customHorizonDays,
+      customLeadTimeMin,
+    } = body;
+
+    if (!staffId) {
+      return NextResponse.json({ error: "staffId requerido" }, { status: 400 });
+    }
+
+    // Role check: PROVIDER can only edit their own staff profile
+    if (user.role === "PROVIDER") {
+      const ownStaff = await prisma.staffProfile.findFirst({
+        where: { userId: user.id },
+      });
+      if (!ownStaff || ownStaff.id !== staffId) {
+        return NextResponse.json(
+          { error: "Solo tienes permisos para modificar tu propio perfil." },
+          { status: 403 }
+        );
+      }
+    }
+
+    const updated = await prisma.staffProfile.update({
+      where: { id: staffId },
+      data: {
+        ...(isActive !== undefined ? { isActive: Boolean(isActive) } : {}),
+        ...(displayName ? { displayName: displayName.trim() } : {}),
+        ...(specialtyTitle ? { specialtyTitle: specialtyTitle.trim() } : {}),
+        ...(avatarUrl !== undefined
+          ? { avatarUrl: avatarUrl ? avatarUrl.trim() : null }
+          : {}),
+        ...(customHorizonDays !== undefined
+          ? { customHorizonDays: Number(customHorizonDays) }
+          : {}),
+        ...(customLeadTimeMin !== undefined
+          ? { customLeadTimeMin: Number(customLeadTimeMin) }
+          : {}),
+      },
+      include: {
+        user: true,
+        workingShifts: true,
+      },
+    });
+
+    return NextResponse.json({ ok: true, staff: updated });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: Request) {
   try {
     const user = await getCurrentUser();

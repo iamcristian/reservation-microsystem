@@ -40,11 +40,16 @@ export async function GET() {
       orderBy: { sortOrder: "asc" },
     });
 
+    const currentUser = await getCurrentUser();
+    const isStaffOrAdmin =
+      currentUser &&
+      (currentUser.role === "ADMIN" || currentUser.role === "PROVIDER");
+
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
     const staff = await prisma.staffProfile.findMany({
-      where: { isActive: true },
+      where: isStaffOrAdmin ? {} : { isActive: true },
       orderBy: { sortOrder: "asc" },
       include: {
         user: {
@@ -65,8 +70,6 @@ export async function GET() {
         },
       },
     });
-
-    const currentUser = await getCurrentUser();
 
     let userAppointments: any[] = [];
     let notifications: any[] = [];

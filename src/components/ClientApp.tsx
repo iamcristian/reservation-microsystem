@@ -809,42 +809,65 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                   </div>
                 </button>
 
-                {/* Individual Staff cards (High Contrast WCAG AA) */}
-                {staffList.map((st: any) => (
-                  <button
-                    key={st.id}
-                    onClick={() => {
-                      setSelectedStaffId(st.id);
-                      setStep(3);
-                    }}
-                    className="w-full text-left bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-[#1F1F23] rounded-2xl md:rounded-full p-2.5 pr-4 flex items-center justify-between shadow-2xs transition-all hover:shadow-sm"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-300 border-2 border-white flex-shrink-0">
-                        {st.avatarUrl ? (
-                          <img
-                            src={st.avatarUrl}
-                            alt={st.displayName}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center font-bold text-xs text-zinc-700">
-                            {st.displayName?.slice(0, 2).toUpperCase()}
-                          </div>
-                        )}
+                {/* Individual Staff cards (Only active staff, excluding paused/vacation accounts) */}
+                {(() => {
+                  const activeEligibleStaff = staffList.filter((st: any) => {
+                    if (st.isActive === false) return false;
+                    if (selectedService?.id && st.services && st.services.length > 0) {
+                      return st.services.some((s: any) => s.serviceId === selectedService.id);
+                    }
+                    return true;
+                  });
+
+                  if (activeEligibleStaff.length === 0) {
+                    return (
+                      <div className="py-8 px-4 bg-zinc-50 rounded-2xl text-center text-xs text-zinc-600 border border-zinc-200 md:col-span-2 lg:col-span-3">
+                        <p className="font-bold text-zinc-800 text-sm">
+                          No hay profesionales disponibles para este servicio
+                        </p>
+                        <p className="text-[11px] text-zinc-500 mt-1">
+                          El personal asignado se encuentra en periodo de descanso o vacaciones. Por favor elige otro servicio o contáctanos por WhatsApp.
+                        </p>
                       </div>
-                      <div>
-                        <div className="font-bold text-sm text-[#1F1F23]">{st.displayName}</div>
-                        <div className="text-xs text-zinc-600">
-                          {st.specialtyTitle}
+                    );
+                  }
+
+                  return activeEligibleStaff.map((st: any) => (
+                    <button
+                      key={st.id}
+                      onClick={() => {
+                        setSelectedStaffId(st.id);
+                        setStep(3);
+                      }}
+                      className="w-full text-left bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-[#1F1F23] rounded-2xl md:rounded-full p-2.5 pr-4 flex items-center justify-between shadow-2xs transition-all hover:shadow-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-300 border-2 border-white flex-shrink-0">
+                          {st.avatarUrl ? (
+                            <img
+                              src={st.avatarUrl}
+                              alt={st.displayName}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center font-bold text-xs text-zinc-700">
+                              {st.displayName?.slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-bold text-sm text-[#1F1F23]">{st.displayName}</div>
+                          <div className="text-xs text-zinc-600">
+                            {st.specialtyTitle}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="w-9 h-9 rounded-full bg-[#1F1F23] text-white flex items-center justify-center flex-shrink-0">
-                      <ChevronRight className="w-4 h-4" />
-                    </div>
-                  </button>
-                ))}
+                      <div className="w-9 h-9 rounded-full bg-[#1F1F23] text-white flex items-center justify-center flex-shrink-0">
+                        <ChevronRight className="w-4 h-4" />
+                      </div>
+                    </button>
+                  ));
+                })()}
               </div>
             </div>
           )}

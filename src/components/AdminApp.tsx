@@ -341,6 +341,32 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     }
   };
 
+  // Toggle Doctor Active / Vacation mode
+  const handleToggleStaffActive = async (staffId: string, newActiveState: boolean) => {
+    try {
+      const res = await fetch("/api/admin/staff", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffId, isActive: newActiveState }),
+      });
+      const data = await res.json().catch(() => ({ error: "Error en respuesta del servidor." }));
+      if (!res.ok) {
+        showToast("error", "Error", data.error || "No se pudo actualizar el estado.");
+        return;
+      }
+      showToast(
+        "success",
+        newActiveState ? "¡Agenda Reanudada!" : "🏖️ ¡Modo Vacaciones Activado!",
+        newActiveState
+          ? "El profesional vuelve a estar visible en el portal para recibir reservas."
+          : "El profesional ha sido pausado y ocultado del portal de reservas."
+      );
+      onRefresh();
+    } catch (e: any) {
+      showToast("error", "Error", e.message);
+    }
+  };
+
   // Lock PROVIDER role to their own staff profile and allowed tabs
   useEffect(() => {
     if (isProviderOnly) {
@@ -1558,6 +1584,68 @@ Al ingresar con tu correo de Google podrás:
             </div>
           </div>
 
+          {/* Tarjeta de Disponibilidad / Modo Vacaciones */}
+          <div
+            className={`p-4 rounded-3xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
+              selectedStaff?.isActive
+                ? "bg-emerald-50/80 border-emerald-200 text-emerald-950"
+                : "bg-amber-50 border-amber-300 text-amber-950 shadow-sm"
+            }`}
+          >
+            <div className="flex items-start sm:items-center gap-3">
+              <span className="text-2xl flex-shrink-0">
+                {selectedStaff?.isActive ? "🟢" : "🏖️"}
+              </span>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-sm">
+                    {selectedStaff?.isActive
+                      ? "Agenda Activa (Disponible para reservas)"
+                      : "Modo Vacaciones / Agenda en Pausa"}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                      selectedStaff?.isActive
+                        ? "bg-emerald-200 text-emerald-900"
+                        : "bg-amber-200 text-amber-900"
+                    }`}
+                  >
+                    {selectedStaff?.isActive ? "Visible al público" : "Oculto para clientes"}
+                  </span>
+                </div>
+                <p className="text-xs opacity-85 mt-0.5">
+                  {selectedStaff?.isActive
+                    ? "Tu perfil está visible en el portal y los clientes pueden agendar en tus horarios habilitados."
+                    : "Estás temporalmente oculto del portal de reservas. Los clientes no pueden verte ni reservar citas contigo."}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                handleToggleStaffActive(selectedStaff.id, !selectedStaff.isActive)
+              }
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 ${
+                selectedStaff?.isActive
+                  ? "bg-white hover:bg-amber-100 text-amber-900 border border-amber-300"
+                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
+              }`}
+            >
+              {selectedStaff?.isActive ? (
+                <>
+                  <span>🏖️</span>
+                  <span>Tomar Vacaciones / Pausar Agenda</span>
+                </>
+              ) : (
+                <>
+                  <span>🟢</span>
+                  <span>Reanudar Agenda (Volver a recibir citas)</span>
+                </>
+              )}
+            </button>
+          </div>
+
           {/* Banner de Edición Activa */}
           {isEditingShifts && (
             <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900 animate-in fade-in">
@@ -2063,6 +2151,15 @@ Al ingresar con tu correo de Google podrás:
                               ? "👑 ADMIN / DUEÑO"
                               : "🩺 PROFESIONAL AUTORIZADO"}
                           </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              st.isActive
+                                ? "bg-emerald-100 text-emerald-950 border border-emerald-300"
+                                : "bg-amber-100 text-amber-950 border border-amber-300"
+                            }`}
+                          >
+                            {st.isActive ? "🟢 ACTIVO" : "🏖️ EN VACACIONES"}
+                          </span>
                         </div>
                         <div className="text-xs font-semibold text-zinc-600 mt-0.5">
                           {st.specialtyTitle || st.specialty || "Especialista"}
@@ -2119,6 +2216,18 @@ Al ingresar con tu correo de Google podrás:
                           👁️ Ver como {st.displayName}
                         </button>
                       )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStaffActive(st.id, !st.isActive)}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer ${
+                          st.isActive
+                            ? "bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300"
+                            : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                        }`}
+                      >
+                        {st.isActive ? "🏖️ Pausar (Vacaciones)" : "🟢 Reanudar atención"}
+                      </button>
                     </div>
 
                     {!isPrimaryOwner && (
@@ -2623,66 +2732,88 @@ Al ingresar con tu correo de Google podrás:
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="border-[1.5px] border-zinc-300 bg-[#F4F4F6] rounded-2xl px-4 py-2">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase block">
-                  Ventana de Reserva (Días)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={90}
-                  value={settingsForm?.bookingHorizonDays || 7}
-                  onChange={(e) =>
-                    setSettingsForm({
-                      ...settingsForm,
-                      bookingHorizonDays: Number(e.target.value),
-                    })
-                  }
-                  className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
-                />
+            {/* Políticas Generales de la Clínica (Valores por Defecto) */}
+            <div className="p-4.5 bg-zinc-50 border border-zinc-200 rounded-2xl space-y-3">
+              <div>
+                <h4 className="text-xs font-bold text-zinc-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <Settings className="w-4 h-4 text-zinc-600" />
+                  <span>Reglas Predeterminadas de la Clínica (Valores Base)</span>
+                </h4>
+                <p className="text-[11px] text-zinc-500 mt-0.5">
+                  Estas son las reglas generales del negocio. Se aplican por defecto a los nuevos doctores o a quienes no tengan reglas personalizadas en su pestaña &quot;Mis Horarios&quot;. Cada doctor puede definir su propia ventana y antelación.
+                </p>
               </div>
 
-              <div className="border-[1.5px] border-zinc-300 bg-[#F4F4F6] rounded-2xl px-4 py-2">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase block">
-                  Aviso previo mínimo
-                </label>
-                <select
-                  value={settingsForm?.minLeadTimeMinutes ?? 30}
-                  onChange={(e) =>
-                    setSettingsForm({
-                      ...settingsForm,
-                      minLeadTimeMinutes: Number(e.target.value),
-                    })
-                  }
-                  className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
-                >
-                  <option value={0}>0 min (Inmediato / En cualquier momento)</option>
-                  <option value={15}>15 minutos antes</option>
-                  <option value={30}>30 minutos antes</option>
-                  <option value={60}>60 minutos (1 hora)</option>
-                  <option value={120}>120 minutos (2 horas)</option>
-                  <option value={1440}>24 horas antes</option>
-                </select>
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div className="border-[1.5px] border-zinc-300 bg-white rounded-2xl px-4 py-2">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase block">
+                    Ventana de Reserva Base (Días)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={90}
+                    value={settingsForm?.bookingHorizonDays || 7}
+                    onChange={(e) =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        bookingHorizonDays: Number(e.target.value),
+                      })
+                    }
+                    className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                  />
+                  <span className="text-[10px] text-zinc-400 block mt-0.5">
+                    Anticipación máxima por defecto
+                  </span>
+                </div>
 
-              <div className="border-[1.5px] border-zinc-300 bg-[#F4F4F6] rounded-2xl px-4 py-2">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase block">
-                  Horas mínimas cancelación
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={72}
-                  value={settingsForm?.minCancelNoticeHours || 6}
-                  onChange={(e) =>
-                    setSettingsForm({
-                      ...settingsForm,
-                      minCancelNoticeHours: Number(e.target.value),
-                    })
-                  }
-                  className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
-                />
+                <div className="border-[1.5px] border-zinc-300 bg-white rounded-2xl px-4 py-2">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase block">
+                    Aviso Previo Mínimo Base
+                  </label>
+                  <select
+                    value={settingsForm?.minLeadTimeMinutes ?? 30}
+                    onChange={(e) =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        minLeadTimeMinutes: Number(e.target.value),
+                      })
+                    }
+                    className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full cursor-pointer"
+                  >
+                    <option value={0}>0 min (Inmediato / En cualquier momento)</option>
+                    <option value={15}>15 minutos antes</option>
+                    <option value={30}>30 minutos antes</option>
+                    <option value={60}>60 minutos (1 hora)</option>
+                    <option value={120}>120 minutos (2 horas)</option>
+                    <option value={1440}>24 horas antes</option>
+                  </select>
+                  <span className="text-[10px] text-zinc-400 block mt-0.5">
+                    Margen de antelación para el mismo día
+                  </span>
+                </div>
+
+                <div className="border-[1.5px] border-zinc-300 bg-white rounded-2xl px-4 py-2">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase block">
+                    Horas Mínimas Cancelación
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={72}
+                    value={settingsForm?.minCancelNoticeHours || 6}
+                    onChange={(e) =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        minCancelNoticeHours: Number(e.target.value),
+                      })
+                    }
+                    className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                  />
+                  <span className="text-[10px] text-zinc-400 block mt-0.5">
+                    Regla global para cancelar sin falta
+                  </span>
+                </div>
               </div>
             </div>
           </div>
