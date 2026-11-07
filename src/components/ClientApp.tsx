@@ -256,6 +256,24 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
     };
   }, [step, selectedService?.id, selectedStaffId, selectedDateStr]);
 
+  // Real-time synchronization of appointments and cancellation notifications when switching tabs or polling
+  useEffect(() => {
+    const syncBootstrap = () => {
+      if (document.visibilityState === "visible") {
+        onRefresh();
+      }
+    };
+    window.addEventListener("focus", syncBootstrap);
+    document.addEventListener("visibilitychange", syncBootstrap);
+    const poll = setInterval(syncBootstrap, 5000);
+
+    return () => {
+      window.removeEventListener("focus", syncBootstrap);
+      document.removeEventListener("visibilitychange", syncBootstrap);
+      clearInterval(poll);
+    };
+  }, [onRefresh]);
+
   const selectedStaffObj = staffList.find((s: any) => s.id === selectedStaffId);
   const horizonDays =
     (selectedStaffId !== "ANY" ? selectedStaffObj?.customHorizonDays : null) ??

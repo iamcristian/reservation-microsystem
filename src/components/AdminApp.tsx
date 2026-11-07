@@ -484,27 +484,37 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     }
   };
 
-  // Lock PROVIDER role to their own staff profile and allowed tabs
+  // Lock PROVIDER role to their own staff profile and allowed tabs, and sync when user changes
+  const lastSyncedUserIdRef = React.useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (isProviderOnly) {
-      const ownProfile =
-        staffList.find(
-          (s: any) =>
-            s.userId === currentUser?.id ||
-            (s.user?.email && s.user.email === currentUser?.email) ||
-            s.displayName?.toLowerCase() === currentUser?.name?.toLowerCase()
-        ) || staffList[1] || staffList[0];
+    const ownProfile =
+      staffList.find(
+        (s: any) =>
+          s.userId === currentUser?.id ||
+          (s.user?.email && s.user.email === currentUser?.email) ||
+          s.displayName?.toLowerCase() === currentUser?.name?.toLowerCase()
+      ) || staffList[0];
 
-      if (ownProfile && selectedStaffId !== ownProfile.id) {
-        setSelectedStaffId(ownProfile.id);
+    const userChanged =
+      currentUser?.id && lastSyncedUserIdRef.current !== currentUser.id;
+    if (currentUser?.id) {
+      lastSyncedUserIdRef.current = currentUser.id;
+    }
+
+    if (isProviderOnly) {
+      const providerProfile = ownProfile || staffList[1] || staffList[0];
+      if (providerProfile && selectedStaffId !== providerProfile.id) {
+        setSelectedStaffId(providerProfile.id);
       }
       if (activeTab !== "agenda" && activeTab !== "shifts") {
         setActiveTab("agenda");
       }
+    } else if (userChanged && ownProfile?.id) {
+      setSelectedStaffId(ownProfile.id);
     } else if (!selectedStaffId && staffList[0]?.id) {
       setSelectedStaffId(staffList[0].id);
     }
-  }, [isProviderOnly, currentUser?.id, staffList, activeTab, selectedStaffId]);
+  }, [isProviderOnly, currentUser?.id, currentUser?.email, currentUser?.name, staffList, activeTab, selectedStaffId]);
 
   // Appointments state
   const [loadingApts, setLoadingApts] = useState(false);
@@ -519,11 +529,13 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     type: "LATE_START" | "EARLY_LEAVE" | "FULL_DAY_OFF";
     timeStr: string;
     reason: string;
+    staffId?: string;
   }>({
     open: false,
     type: "LATE_START",
     timeStr: "09:30",
     reason: "",
+    staffId: "",
   });
 
   // Conflict state when doctor blocks time
@@ -609,7 +621,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
   }, [agendaDateStr, selectedStaffId]);
 
   // Handle Quick Imprevisto submit
-  const handleQuickImprevisto = async (resolution?: string) => {
+  const handleQuickImprevisto = async (resolution?: string, overrideStaffId?: string) => {
     let startAt = new Date(`${agendaDateStr}T00:00:00`);
     let endAt = new Date(`${agendaDateStr}T09:30:00`);
 
@@ -624,12 +636,15 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
       endAt = new Date(`${agendaDateStr}T23:59:59`);
     }
 
+    const targetStaffId =
+      overrideStaffId || imprevistoModal.staffId || selectedStaffId;
+
     try {
       const res = await fetch("/api/admin/day-override", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          staffId: selectedStaffId,
+          staffId: targetStaffId,
           type: imprevistoModal.type,
           startAt: startAt.toISOString(),
           endAt: endAt.toISOString(),
@@ -657,9 +672,19 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
         return;
       }
 
+      if (targetStaffId && targetStaffId !== selectedStaffId) {
+        setSelectedStaffId(targetStaffId);
+      }
       setImprevistoModal({ ...imprevistoModal, open: false });
       setConflictData(null);
-      showToast("success", "¡Imprevisto Guardado!", "El bloqueo de horario y notificación de agenda se aplicaron correctamente.");
+      showToast(
+        "success",
+        "¡Imprevisto Guardado!",
+        data.conflictsResolved > 0
+          ? `Se cerró el horario y se notificó la cancelación de ${data.conflictsResolved} cita(s) al cliente.`
+          : "El bloqueo de horario se aplicó correctamente."
+      );
+      loadDayAppointments();
       onRefresh();
     } catch (e: any) {
       showToast("error", "Error al guardar imprevisto", e.message);
@@ -795,20 +820,63 @@ Te esperábamos para tu cita de *${apt.service?.name || "servicio"}* reservada p
     return `https://wa.me/${rawPhone}?text=${encodeURIComponent(text)}`;
   };
 
-  // Handle Appointment Status Change
-  const handleStatusChange = async (aptId: string, status: string, blockCustomer?: boolean) => {
+  // Handle Appointment Status Change (Doctors/Admins can always cancel any appointment regardless of customer 6h notice rule)
+  const handleStatusChange = async (
+    aptId: string,
+    status: string,
+    blockCustomer?: boolean,
+    customReason?: string
+  ) => {
     try {
+      const reason =
+        customReason ||
+        (status === "CANCELLED"
+          ? "Cancelada por el profesional / imprevisto de agenda"
+          : undefined);
       const res = await fetch(`/api/admin/appointments/${aptId}/status`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, blockCustomer }),
+        body: JSON.stringify({ status, blockCustomer, reason }),
       });
       if (res.ok) {
+        if (status === "CANCELLED") {
+          showToast(
+            "info",
+            "Cita cancelada",
+            "Se canceló la cita y se envió el aviso automático al portal del cliente."
+          );
+        }
         loadDayAppointments();
         onRefresh();
       }
     } catch (e: any) {
       showToast("error", "Error al actualizar estado", e.message);
+    }
+  };
+
+  // Cancel all pending appointments for the current date & selected staff (or all staff)
+  const handleCancelAllDayAppointments = async (targetApts: any[]) => {
+    if (!targetApts || targetApts.length === 0) return;
+    try {
+      for (const apt of targetApts) {
+        await fetch(`/api/admin/appointments/${apt.id}/status`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "CANCELLED",
+            reason: `No atiendo el ${agendaDateStr} por descanso/imprevisto`,
+          }),
+        });
+      }
+      showToast(
+        "success",
+        `¡${targetApts.length} cita(s) cancelada(s)!`,
+        "Todas las citas seleccionadas fueron canceladas y los clientes recibieron el aviso para reagendar."
+      );
+      loadDayAppointments();
+      onRefresh();
+    } catch (e: any) {
+      showToast("error", "Error al cancelar citas", e.message);
     }
   };
 
@@ -1207,6 +1275,7 @@ Al ingresar con tu correo de Google podrás:
                     type: "LATE_START",
                     timeStr: "09:30",
                     reason: `Llegaré más tarde (${agendaDateStr})`,
+                    staffId: selectedStaffId,
                   })
                 }
                 className="p-2.5 rounded-2xl bg-white border border-zinc-300 text-zinc-800 text-left hover:border-zinc-800 transition-all shadow-sm"
@@ -1223,6 +1292,7 @@ Al ingresar con tu correo de Google podrás:
                     type: "EARLY_LEAVE",
                     timeStr: "16:00",
                     reason: `Cerrar temprano (${agendaDateStr})`,
+                    staffId: selectedStaffId,
                   })
                 }
                 className="p-2.5 rounded-2xl bg-white border border-zinc-300 text-zinc-800 text-left hover:border-zinc-800 transition-all shadow-sm"
@@ -1240,6 +1310,7 @@ Al ingresar con tu correo de Google podrás:
                     type: "FULL_DAY_OFF",
                     timeStr: "00:00",
                     reason: isToday ? "No atiendo hoy por descanso/imprevisto" : `Cerrado el ${agendaDateStr} por descanso/imprevisto`,
+                    staffId: selectedStaffId,
                   });
                 }}
                 className="p-2.5 rounded-2xl bg-white border border-red-300 text-zinc-800 text-left hover:border-zinc-800 transition-all shadow-sm"
@@ -1413,7 +1484,7 @@ Al ingresar con tu correo de Google podrás:
 
           {/* Appointments List for the day */}
           <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5 flex-wrap">
                 <span>Citas de la Fecha ({dayAppointments.length})</span>
                 <span className="text-[11px] font-semibold text-zinc-400 normal-case">
@@ -1422,6 +1493,24 @@ Al ingresar con tu correo de Google podrás:
                     : staffList.find((s: any) => s.id === selectedStaffId)?.displayName || "doctor seleccionado"}
                 </span>
               </h3>
+
+              {(() => {
+                const pendingDayApts = dayAppointments.filter(
+                  (a: any) =>
+                    a.status === "CONFIRMED" ||
+                    a.status === "RESCHEDULED_BY_STAFF"
+                );
+                if (pendingDayApts.length === 0) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => handleCancelAllDayAppointments(pendingDayApts)}
+                    className="px-3 py-1 rounded-full bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[11px] font-bold transition-all shadow-2xs"
+                  >
+                    ✕ Cancelar todas las de esta fecha ({pendingDayApts.length})
+                  </button>
+                );
+              })()}
             </div>
 
             {/* Filter pills bar: Pendientes, Atendidas, No Asistió, Todas */}
@@ -1493,8 +1582,65 @@ Al ingresar con tu correo de Google podrás:
               });
 
               if (filteredApts.length === 0) {
+                const otherStaffActiveApts =
+                  isOwnerAdmin && selectedStaffId && selectedStaffId !== "ALL"
+                    ? allAppointments.filter((a: any) => {
+                        const aStr = formatLocalDateYYYYMMDD(new Date(a.startAt));
+                        return (
+                          aStr === agendaDateStr &&
+                          a.staffId !== selectedStaffId &&
+                          (a.status === "CONFIRMED" ||
+                            a.status === "RESCHEDULED_BY_STAFF")
+                        );
+                      })
+                    : [];
+
                 return (
                   <div className="space-y-3">
+                    {otherStaffActiveApts.length > 0 && (
+                      <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 flex items-center justify-between gap-3 flex-wrap shadow-2xs">
+                        <div className="text-xs text-amber-950 space-y-0.5">
+                          <div className="font-bold flex items-center gap-1.5">
+                            <span>🔔</span>
+                            <span>
+                              Hay {otherStaffActiveApts.length} cita(s) activa(s) hoy ({agendaDateStr}) con otro profesional:
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-amber-900">
+                            {otherStaffActiveApts
+                              .map(
+                                (a: any) =>
+                                  `${a.staff?.displayName || "Doctor"} (${new Date(
+                                    a.startAt
+                                  ).toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })} • ${a.customer?.name || "Cliente"})`
+                              )
+                              .join(" — ")}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedStaffId(otherStaffActiveApts[0].staffId)
+                            }
+                            className="px-3 py-1.5 rounded-full bg-[#1F1F23] hover:bg-black text-white text-[11px] font-bold transition-all shadow-2xs"
+                          >
+                            Ver agenda de {otherStaffActiveApts[0].staff?.displayName}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStaffId("ALL")}
+                            className="px-3 py-1.5 rounded-full bg-white hover:bg-amber-100 text-amber-950 border border-amber-300 text-[11px] font-bold transition-all"
+                          >
+                            👥 Ver todo el equipo
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="py-7 px-4 text-center text-xs text-zinc-500 bg-zinc-50 rounded-2xl border border-zinc-200 space-y-1.5">
                       <div className="font-semibold text-zinc-700">
                         No hay citas{" "}
@@ -3400,78 +3546,195 @@ Al ingresar con tu correo de Google podrás:
       )}
 
       {/* QUICK IMPREVISTO MODAL */}
-      {imprevistoModal.open && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl relative">
-            <h3 className="text-base font-bold text-zinc-900">
-              {imprevistoModal.type === "LATE_START" && "🌅 Entrar más tarde hoy"}
-              {imprevistoModal.type === "EARLY_LEAVE" && "🎂 Salir antes / Cumpleaños"}
-              {imprevistoModal.type === "FULL_DAY_OFF" && "🏖️ Cerrar día completo"}
-            </h3>
-            <p className="text-xs text-zinc-500 mt-1">
-              Configura el bloqueo temporal de tu agenda.
-            </p>
+      {imprevistoModal.open && (() => {
+        const activeModalStaffId = imprevistoModal.staffId || selectedStaffId;
+        const activeDateAptsAllStaff = allAppointments.filter((a: any) => {
+          const aStr = formatLocalDateYYYYMMDD(new Date(a.startAt));
+          return (
+            aStr === agendaDateStr &&
+            (a.status === "CONFIRMED" || a.status === "RESCHEDULED_BY_STAFF")
+          );
+        });
+        const modalTargetApts = activeDateAptsAllStaff.filter((a: any) =>
+          activeModalStaffId === "ALL" ? true : a.staffId === activeModalStaffId
+        );
+        const otherStaffWithApts =
+          activeModalStaffId !== "ALL"
+            ? activeDateAptsAllStaff.filter((a: any) => a.staffId !== activeModalStaffId)
+            : [];
 
-            <div className="mt-4 space-y-3">
-              {imprevistoModal.type !== "FULL_DAY_OFF" && (
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl relative">
+              <h3 className="text-base font-bold text-zinc-900">
+                {imprevistoModal.type === "LATE_START" && "🌅 Entrar más tarde hoy"}
+                {imprevistoModal.type === "EARLY_LEAVE" && "🎂 Salir antes / Cumpleaños"}
+                {imprevistoModal.type === "FULL_DAY_OFF" && "🏖️ Cerrar día completo"}
+              </h3>
+              <p className="text-xs text-zinc-500 mt-1">
+                Configura el bloqueo temporal para el <b>{agendaDateStr}</b>.
+              </p>
+
+              <div className="mt-4 space-y-3">
+                {isOwnerAdmin && staffList.length > 1 && (
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
+                      ¿A qué agenda aplica este cierre / imprevisto?
+                    </label>
+                    <select
+                      value={activeModalStaffId}
+                      onChange={(e) =>
+                        setImprevistoModal({
+                          ...imprevistoModal,
+                          staffId: e.target.value,
+                        })
+                      }
+                      className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-xs bg-white focus:outline-none cursor-pointer"
+                    >
+                      {staffList.map((st: any) => {
+                        const stCount = activeDateAptsAllStaff.filter(
+                          (a: any) => a.staffId === st.id
+                        ).length;
+                        return (
+                          <option key={st.id} value={st.id}>
+                            {st.displayName} ({stCount} cita{stCount === 1 ? "" : "s"} hoy)
+                          </option>
+                        );
+                      })}
+                      <option value="ALL">
+                        👥 Todo el equipo / Cerrar clínica ({activeDateAptsAllStaff.length} cita{activeDateAptsAllStaff.length === 1 ? "" : "s"} hoy)
+                      </option>
+                    </select>
+                  </div>
+                )}
+
+                {isOwnerAdmin &&
+                  modalTargetApts.length === 0 &&
+                  otherStaffWithApts.length > 0 && (
+                    <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-300 text-[11px] text-amber-950 space-y-2">
+                      <div>
+                        ⚠️ <b>Atención:</b> El profesional seleccionado tiene <b>0 citas</b> para el {agendaDateStr}, pero <b>{otherStaffWithApts[0].staff?.displayName}</b> tiene <b>{otherStaffWithApts.length} cita(s) activa(s)</b> hoy.
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setImprevistoModal({
+                              ...imprevistoModal,
+                              staffId: otherStaffWithApts[0].staffId,
+                            })
+                          }
+                          className="px-2.5 py-1 rounded-full bg-[#1F1F23] text-white text-[10px] font-bold hover:bg-black"
+                        >
+                          Cambiar a {otherStaffWithApts[0].staff?.displayName}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setImprevistoModal({
+                              ...imprevistoModal,
+                              staffId: "ALL",
+                            })
+                          }
+                          className="px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-950 text-[10px] font-bold hover:bg-amber-100"
+                        >
+                          👥 Cerrar todo el equipo
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                {modalTargetApts.length > 0 && (
+                  <div className="p-2.5 rounded-2xl bg-red-50 border border-red-200 text-[11px] text-red-950 space-y-1">
+                    <div className="font-bold">
+                      📋 {modalTargetApts.length} cita(s) activa(s) en esta fecha:
+                    </div>
+                    {modalTargetApts.slice(0, 3).map((a: any) => (
+                      <div key={a.id} className="text-[10px] text-red-800">
+                        •{" "}
+                        {new Date(a.startAt).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}{" "}
+                        — <b>{a.customer?.name}</b> ({a.service?.name})
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {imprevistoModal.type !== "FULL_DAY_OFF" && (
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase block">
+                      {imprevistoModal.type === "LATE_START"
+                        ? "Atenderé a partir de las:"
+                        : "Cerrar atención a partir de las:"}
+                    </label>
+                    <input
+                      type="time"
+                      value={imprevistoModal.timeStr}
+                      onChange={(e) =>
+                        setImprevistoModal({
+                          ...imprevistoModal,
+                          timeStr: e.target.value,
+                        })
+                      }
+                      className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-sm"
+                    />
+                  </div>
+                )}
+
                 <div>
                   <label className="text-[10px] font-bold text-zinc-500 uppercase block">
-                    {imprevistoModal.type === "LATE_START"
-                      ? "Atenderé a partir de las:"
-                      : "Cerrar atención a partir de las:"}
+                    Motivo (Visible si hay que avisar a pacientes)
                   </label>
                   <input
-                    type="time"
-                    value={imprevistoModal.timeStr}
+                    type="text"
+                    value={imprevistoModal.reason}
                     onChange={(e) =>
                       setImprevistoModal({
                         ...imprevistoModal,
-                        timeStr: e.target.value,
+                        reason: e.target.value,
                       })
                     }
-                    className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-sm"
+                    placeholder="Ej. Cumpleaños / Trámite personal"
+                    className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-xs font-medium"
                   />
                 </div>
-              )}
+              </div>
 
-              <div>
-                <label className="text-[10px] font-bold text-zinc-500 uppercase block">
-                  Motivo (Visible si hay que avisar a pacientes)
-                </label>
-                <input
-                  type="text"
-                  value={imprevistoModal.reason}
-                  onChange={(e) =>
-                    setImprevistoModal({
-                      ...imprevistoModal,
-                      reason: e.target.value,
-                    })
-                  }
-                  placeholder="Ej. Cumpleaños / Trámite personal"
-                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-xs font-medium"
-                />
+              <div className="mt-5 space-y-2">
+                {modalTargetApts.length > 0 &&
+                  imprevistoModal.type !== "LATE_START" && (
+                    <button
+                      type="button"
+                      onClick={() => handleQuickImprevisto("CANCEL_ALL")}
+                      className="w-full py-3 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition-all"
+                    >
+                      ⛔ Cerrar día, cancelar {modalTargetApts.length} cita(s) y notificar
+                    </button>
+                  )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleQuickImprevisto()}
+                    className="flex-1 py-3 rounded-full bg-[#1F1F23] text-white text-xs font-semibold hover:bg-black"
+                  >
+                    Aplicar Bloqueo
+                  </button>
+                  <button
+                    onClick={() =>
+                      setImprevistoModal({ ...imprevistoModal, open: false })
+                    }
+                    className="py-3 px-4 rounded-full bg-zinc-100 text-zinc-700 text-xs font-semibold hover:bg-zinc-200"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               </div>
             </div>
-
-            <div className="mt-5 flex gap-2">
-              <button
-                onClick={() => handleQuickImprevisto()}
-                className="flex-1 py-3 rounded-full bg-[#1F1F23] text-white text-xs font-semibold hover:bg-black"
-              >
-                Aplicar Bloqueo
-              </button>
-              <button
-                onClick={() =>
-                  setImprevistoModal({ ...imprevistoModal, open: false })
-                }
-                className="py-3 px-4 rounded-full bg-zinc-100 text-zinc-700 text-xs font-semibold hover:bg-zinc-200"
-              >
-                Cancelar
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* CONFLICT DETECTED MODAL */}
       {conflictData?.open && (

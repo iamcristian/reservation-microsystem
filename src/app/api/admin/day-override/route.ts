@@ -24,10 +24,21 @@ export async function POST(req: Request) {
     const startDate = new Date(startAt);
     const endDate = new Date(endAt);
 
+    let targetStaffIds: string[] = [];
+    if (staffId === "ALL") {
+      const allStaff = await prisma.staffProfile.findMany({
+        where: { isActive: true },
+        select: { id: true },
+      });
+      targetStaffIds = allStaff.map((s) => s.id);
+    } else {
+      targetStaffIds = [staffId];
+    }
+
     // 1. Detect conflicting appointments
     const conflicting = await prisma.appointment.findMany({
       where: {
-        staffId,
+        staffId: { in: targetStaffIds },
         status: { in: ["CONFIRMED", "RESCHEDULED_BY_STAFF"] },
         startAt: { lt: endDate },
         endAt: { gt: startDate },
@@ -67,7 +78,7 @@ export async function POST(req: Request) {
         endOfDay.setHours(23, 59, 59, 999);
         const remainingDayApts = await prisma.appointment.findMany({
           where: {
-            staffId,
+            staffId: { in: targetStaffIds },
             id: { notIn: conflicting.map((c) => c.id) },
             status: { in: ["CONFIRMED", "RESCHEDULED_BY_STAFF"] },
             startAt: { gte: endDate, lte: endOfDay },
@@ -166,26 +177,31 @@ export async function POST(req: Request) {
     if (type === "FULL_DAY_OFF") {
       await prisma.timeOff.deleteMany({
         where: {
-          staffId,
+          staffId: { in: targetStaffIds },
           startAt: { gte: startDate },
           endAt: { lte: endDate },
         },
       });
     }
 
-    const createdTimeOff = await prisma.timeOff.create({
-      data: {
-        staffId,
-        startAt: startDate,
-        endAt: endDate,
-        type: type || "CUSTOM_BLOCK",
-        reason: reason || null,
-      },
-    });
+    const createdTimeOffs = [];
+    for (const tStaffId of targetStaffIds) {
+      const created = await prisma.timeOff.create({
+        data: {
+          staffId: tStaffId,
+          startAt: startDate,
+          endAt: endDate,
+          type: type || "CUSTOM_BLOCK",
+          reason: reason || null,
+        },
+      });
+      createdTimeOffs.push(created);
+    }
 
     return NextResponse.json({
       ok: true,
-      timeOff: createdTimeOff,
+      timeOff: createdTimeOffs[0] || null,
+      timeOffs: createdTimeOffs,
       conflictsResolved: conflicting.length,
     });
   } catch (error: any) {

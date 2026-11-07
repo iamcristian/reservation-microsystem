@@ -224,8 +224,12 @@ async function runE2E() {
       "BUG-01: POST /api/appointments rejects booking at 03:00 AM outside shift hours (HTTP 409)"
     );
 
-    // 5c. Valid booking during standard business hours (e.g. 10:00)
-    const sharedSlot = availTarget.json.slots.includes("10:00") ? "10:00" : availTarget.json.slots[0];
+    // 5c. Valid booking during standard business hours (e.g. 11:30 to avoid collision with 10:00 user appointments)
+    const sharedSlot = availTarget.json.slots.includes("11:30")
+      ? "11:30"
+      : availTarget.json.slots.includes("11:00")
+      ? "11:00"
+      : availTarget.json.slots[0];
     const validBook1 = await customerSession.request("/api/appointments", {
       method: "POST",
       body: JSON.stringify({

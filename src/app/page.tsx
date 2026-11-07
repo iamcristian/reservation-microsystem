@@ -14,7 +14,7 @@ export default function HomePage() {
 
   const loadData = async () => {
     try {
-      const res = await fetch("/api/bootstrap");
+      const res = await fetch("/api/bootstrap", { cache: "no-store" });
       if (!res.ok) {
         console.error("Bootstrap HTTP status:", res.status);
       }

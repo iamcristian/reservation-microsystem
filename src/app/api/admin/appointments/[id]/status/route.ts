@@ -27,11 +27,16 @@ export async function PUT(
       return NextResponse.json({ error: "Cita no encontrada" }, { status: 404 });
     }
 
+    const effectiveReason =
+      status === "CANCELLED"
+        ? reason || "Cancelada por el profesional / imprevisto de agenda"
+        : reason;
+
     const updated = await prisma.appointment.update({
       where: { id },
       data: {
         status,
-        ...(reason ? { staffMoveReason: reason } : {}),
+        ...(effectiveReason ? { staffMoveReason: effectiveReason } : {}),
       },
     });
 
