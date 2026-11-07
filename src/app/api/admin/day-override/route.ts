@@ -24,6 +24,18 @@ export async function POST(req: Request) {
     const startDate = new Date(startAt);
     const endDate = new Date(endAt);
 
+    if (user.role === "PROVIDER") {
+      const ownStaff = await prisma.staffProfile.findFirst({
+        where: { userId: user.id },
+      });
+      if (!ownStaff || ownStaff.id !== staffId) {
+        return NextResponse.json(
+          { error: "Solo puedes gestionar bloqueos y cierres sobre tu propia agenda." },
+          { status: 403 }
+        );
+      }
+    }
+
     let targetStaffIds: string[] = [];
     if (staffId === "ALL") {
       const allStaff = await prisma.staffProfile.findMany({
@@ -44,7 +56,15 @@ export async function POST(req: Request) {
         endAt: { gt: startDate },
       },
       include: {
-        customer: true,
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            avatarUrl: true,
+          },
+        },
         service: true,
         staff: true,
       },

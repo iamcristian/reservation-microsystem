@@ -1,7 +1,7 @@
 // src/app/api/bootstrap/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, getImpersonatorId } from "@/lib/session";
 import { canCustomerCancelAppointment } from "@/lib/booking-rules";
 
 export const dynamic = "force-dynamic";
@@ -55,14 +55,20 @@ export async function GET() {
       where: isStaffOrAdmin ? {} : { isActive: true },
       orderBy: { sortOrder: "asc" },
       include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            role: true,
-            phone: true,
-          },
-        },
+        // Linked account data (internal id, email, phone, role) is staff-only.
+        // Public visitors only need the display profile (name, specialty, avatar).
+        ...(isStaffOrAdmin
+          ? {
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  role: true,
+                  phone: true,
+                },
+              },
+            }
+          : {}),
         services: true,
         workingShifts: true,
         timeOffs: {
@@ -73,6 +79,11 @@ export async function GET() {
         },
       },
     });
+
+    // Public staff payload must not leak the linked account id (used to be an account-takeover vector).
+    const safeStaff = isStaffOrAdmin
+      ? staff
+      : staff.map(({ userId: _userId, ...rest }) => rest);
 
     let userAppointments: any[] = [];
     let notifications: any[] = [];
@@ -144,11 +155,22 @@ export async function GET() {
       });
     }
 
+    // Never ship credential material or internal notes to the browser.
+    const safeCurrentUser = currentUser
+      ? (({ passwordHash: _ph, googleId: _gid, adminNotes: _notes, ...rest }) => rest)(
+          currentUser as any
+        )
+      : null;
+
+    const impersonatorId =
+      currentUser && currentUser.role === "PROVIDER" ? await getImpersonatorId() : null;
+
     return NextResponse.json({
       settings,
       services,
-      staff,
-      currentUser,
+      staff: safeStaff,
+      currentUser: safeCurrentUser,
+      impersonatorId,
       userAppointments,
       allAppointments,
       notifications,
@@ -158,7 +180,7 @@ export async function GET() {
     console.error("Bootstrap error:", error);
     return NextResponse.json(
       {
-        error: error?.message || "Error al cargar datos",
+        error: "Error al cargar datos",
         settings: null,
         services: [],
         staff: [],

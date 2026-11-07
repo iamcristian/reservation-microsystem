@@ -1081,6 +1081,9 @@ Al ingresar con tu correo de Google podrás:
       });
       if (res.ok) {
         onRefresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast("error", "No se pudo cambiar de sesión", data.error || "Acción no autorizada.");
       }
     } catch (e) {
       console.error(e);
@@ -1220,13 +1223,9 @@ Al ingresar con tu correo de Google podrás:
               <b>Cuenta de Profesional ({currentUser?.email}):</b> Puedes gestionar tu propia agenda, asistencias y bloquear imprevistos o ajustar tus horarios. Los datos de la empresa, logo y catálogo están protegidos y solo los administra el Dueño.
             </div>
           </div>
-          {allUsers.find((u: any) => u.role === "ADMIN") && (
+          {initialData?.impersonatorId && (
             <button
-              onClick={() =>
-                handlePreviewStaffSession(
-                  allUsers.find((u: any) => u.role === "ADMIN")?.id
-                )
-              }
+              onClick={() => handlePreviewStaffSession(initialData.impersonatorId)}
               className="flex-shrink-0 px-3 py-1.5 rounded-full bg-[#1F1F23] text-white text-[11px] font-bold hover:bg-black transition-all"
             >
               👑 Volver a Admin

@@ -586,6 +586,99 @@ async function runE2E() {
       badShifts.status === 400,
       "PUT /api/admin/shifts rejects inverted shift hours 20:00 to 19:00 with HTTP 400"
     );
+
+    // 11. OWASP Top 10 & API Security Hardening Verification
+    console.log("\n--- 11. OWASP Top 10 & API Security Hardening (SEC-01 to SEC-07) ---");
+
+    // SEC-01: Forged or unsigned session cookie must be rejected
+    if (adminUser) {
+      const forgedSession = new BrowserSession();
+      forgedSession.cookies["reserva_user_id"] = adminUser.id; // Raw unsigned UUID
+      const forgedBoot = await forgedSession.request("/api/bootstrap");
+      assert(
+        forgedBoot.json?.currentUser === null,
+        "SEC-01 (HMAC Cookie): Raw unsigned userId in reserva_user_id cookie is rejected (currentUser === null)"
+      );
+
+      forgedSession.cookies["reserva_user_id"] = `${adminUser.id}.9999999999999.forgedsignature123`;
+      const forgedAdminReq = await forgedSession.request("/api/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify({ name: "Hacked Clinic" }),
+      });
+      assert(
+        forgedAdminReq.status === 403,
+        "SEC-01 (HMAC Cookie): Tampered signature on reserva_user_id cookie is blocked with HTTP 403"
+      );
+    }
+
+    // SEC-02: Public bootstrap must not leak staff internal user accounts or PII
+    const publicStaffExposed = (bootRes.json?.staff || []).some(
+      (s: any) => s.user !== undefined || s.userId !== undefined
+    );
+    assert(
+      !publicStaffExposed,
+      "SEC-02 (Data Exposure): Public /api/bootstrap strips staff[].user (email/phone/role) and staff[].userId"
+    );
+
+    const adminBoot = await adminSession.request("/api/bootstrap");
+    assert(
+      adminBoot.json?.currentUser &&
+        adminBoot.json.currentUser.passwordHash === undefined &&
+        adminBoot.json.currentUser.googleId === undefined &&
+        adminBoot.json.currentUser.adminNotes === undefined,
+      "SEC-02 (Data Exposure): Authenticated currentUser never exposes passwordHash, googleId, or adminNotes"
+    );
+
+    // SEC-03: Anti-Enumeration on /api/auth/login
+    const loginNonExistent = await anon.request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: `nonexistent.${Date.now()}@test.com`,
+        password: "WrongPassword123!",
+      }),
+    });
+    const loginWrongPass = await anon.request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: "alejandro@sonrisa.com",
+        password: "WrongPassword123!",
+      }),
+    });
+    assert(
+      loginNonExistent.status === 401 &&
+        loginWrongPass.status === 401 &&
+        loginNonExistent.json?.error === loginWrongPass.json?.error,
+      "SEC-03 (Anti-Enumeration): Non-existent email and wrong password return identical HTTP 401 message"
+    );
+
+    // SEC-04: BFLA - PROVIDER cannot modify global service catalog or another doctor's schedule override
+    const providerSvcCreate = await providerSession.request("/api/admin/services", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Servicio No Autorizado",
+        durationMin: 30,
+        price: 100,
+      }),
+    });
+    assert(
+      providerSvcCreate.status === 403,
+      "SEC-04 (BFLA): PROVIDER blocked with HTTP 403 on POST /api/admin/services (Admin-only)"
+    );
+
+    const providerCrossOverride = await providerSession.request("/api/admin/day-override", {
+      method: "POST",
+      body: JSON.stringify({
+        staffId: drAlejandro.id,
+        type: "FULL_DAY_OFF",
+        startAt: new Date(`${targetDateStr}T00:00:00`).toISOString(),
+        endAt: new Date(`${targetDateStr}T23:59:59`).toISOString(),
+        reason: "Intento cruzado",
+      }),
+    });
+    assert(
+      providerCrossOverride.status === 403,
+      "SEC-04 (BOLA/BFLA): PROVIDER blocked with HTTP 403 when attempting day-override on another doctor's schedule"
+    );
   } finally {
     // Total test data cleanup to leave database in pristine state
     if (createdAppointmentIds.length > 0) {

@@ -27,6 +27,18 @@ export async function PUT(
       return NextResponse.json({ error: "Cita no encontrada" }, { status: 404 });
     }
 
+    if (user.role === "PROVIDER") {
+      const ownStaff = await prisma.staffProfile.findFirst({
+        where: { userId: user.id },
+      });
+      if (!ownStaff || ownStaff.id !== appointment.staffId) {
+        return NextResponse.json(
+          { error: "Solo tienes permisos para gestionar citas de tu propia agenda." },
+          { status: 403 }
+        );
+      }
+    }
+
     const effectiveReason =
       status === "CANCELLED"
         ? reason || "Cancelada por el profesional / imprevisto de agenda"
@@ -93,7 +105,9 @@ export async function PUT(
       });
     }
 
-    return NextResponse.json({ ok: true, appointment: updated, customer: finalCustomer });
+    const { passwordHash: _ph, googleId: _gid, ...safeCustomer } = finalCustomer;
+
+    return NextResponse.json({ ok: true, appointment: updated, customer: safeCustomer });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

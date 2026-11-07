@@ -3,9 +3,19 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, setSessionUserId } from "@/lib/session";
 import { parseDateAndTime, computeAvailableSlotsForStaff } from "@/lib/slot-engine";
+import {
+  consumeRateLimit,
+  getClientIp,
+  peekRateLimit,
+  resetRateLimit,
+  tooManyRequestsBody,
+} from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
+
+const BOOK_AUTH_WINDOW_MS = 15 * 60 * 1000;
+const MAX_BOOK_AUTH_FAILS = 5;
 
 export async function POST(req: Request) {
   try {
@@ -34,6 +44,17 @@ export async function POST(req: Request) {
       }
 
       const cleanEmail = customerEmail.trim().toLowerCase();
+      const ip = getClientIp(req);
+      const authRateKey = `book-auth-fail:${ip}:${cleanEmail}`;
+
+      const rateCheck = peekRateLimit(authRateKey, MAX_BOOK_AUTH_FAILS, BOOK_AUTH_WINDOW_MS);
+      if (!rateCheck.allowed) {
+        return NextResponse.json(tooManyRequestsBody(rateCheck.retryAfterSec), {
+          status: 429,
+          headers: { "Retry-After": String(rateCheck.retryAfterSec) },
+        });
+      }
+
       const existingUser = await prisma.user.findUnique({
         where: { email: cleanEmail },
       });
@@ -54,6 +75,13 @@ export async function POST(req: Request) {
         if (existingUser.passwordHash) {
           const isMatch = await bcrypt.compare(customerPassword, existingUser.passwordHash);
           if (!isMatch) {
+            const failState = consumeRateLimit(authRateKey, MAX_BOOK_AUTH_FAILS, BOOK_AUTH_WINDOW_MS);
+            if (!failState.allowed) {
+              return NextResponse.json(tooManyRequestsBody(failState.retryAfterSec), {
+                status: 429,
+                headers: { "Retry-After": String(failState.retryAfterSec) },
+              });
+            }
             return NextResponse.json(
               {
                 error: "Contraseña incorrecta. Por favor ingresa la contraseña de tu cuenta.",
@@ -62,6 +90,7 @@ export async function POST(req: Request) {
               { status: 401 }
             );
           }
+          resetRateLimit(authRateKey);
         }
         user = existingUser;
       } else {

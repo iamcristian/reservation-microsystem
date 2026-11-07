@@ -8,8 +8,11 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const user = await getCurrentUser();
-    if (!user || (user.role !== "ADMIN" && user.role !== "PROVIDER")) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    if (!user || user.role !== "ADMIN") {
+      return NextResponse.json(
+        { error: "Solo el Administrador/Dueño principal puede crear o modificar el catálogo de servicios." },
+        { status: 403 }
+      );
     }
 
     const { name, description, durationMin, bufferAfterMin, price, staffIds } =
@@ -86,8 +89,11 @@ export async function POST(req: Request) {
 export async function PUT(req: Request) {
   try {
     const user = await getCurrentUser();
-    if (!user || (user.role !== "ADMIN" && user.role !== "PROVIDER")) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    if (!user || user.role !== "ADMIN") {
+      return NextResponse.json(
+        { error: "Solo el Administrador/Dueño principal puede modificar el catálogo global de servicios y precios." },
+        { status: 403 }
+      );
     }
 
     const { id, name, description, durationMin, bufferAfterMin, price, isActive, staffIds } =

@@ -27,7 +27,14 @@ export async function GET(req: Request) {
     if (stateStr) {
       try {
         const parsed = JSON.parse(decodeURIComponent(stateStr));
-        if (parsed.returnTo) returnTo = parsed.returnTo;
+        if (
+          typeof parsed.returnTo === "string" &&
+          parsed.returnTo.startsWith("/") &&
+          !parsed.returnTo.startsWith("//") &&
+          !parsed.returnTo.includes("\\")
+        ) {
+          returnTo = parsed.returnTo;
+        }
       } catch (e) {
         console.error("State parse error:", e);
       }

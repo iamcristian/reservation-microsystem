@@ -94,13 +94,24 @@ export async function POST(req: Request) {
         },
       },
       include: {
-        user: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            role: true,
+            avatarUrl: true,
+          },
+        },
         services: true,
         workingShifts: true,
       },
     });
 
-    return NextResponse.json({ ok: true, staff: newStaff, user: staffUser });
+    const { passwordHash: _ph, googleId: _gid, ...safeStaffUser } = staffUser;
+
+    return NextResponse.json({ ok: true, staff: newStaff, user: safeStaffUser });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -143,14 +154,19 @@ export async function PATCH(req: Request) {
     }
 
     if (Array.isArray(serviceIds)) {
+      const validServices = await prisma.service.findMany({
+        where: { id: { in: serviceIds.map(String) } },
+        select: { id: true },
+      });
+      const validIds = validServices.map((s) => s.id);
       await prisma.staffService.deleteMany({
         where: { staffId },
       });
-      if (serviceIds.length > 0) {
+      if (validIds.length > 0) {
         await prisma.staffService.createMany({
-          data: serviceIds.map((svcId: string) => ({
+          data: validIds.map((svcId: string) => ({
             staffId,
-            serviceId: String(svcId),
+            serviceId: svcId,
           })),
         });
       }
@@ -173,7 +189,16 @@ export async function PATCH(req: Request) {
           : {}),
       },
       include: {
-        user: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            role: true,
+            avatarUrl: true,
+          },
+        },
         services: true,
         workingShifts: true,
       },
