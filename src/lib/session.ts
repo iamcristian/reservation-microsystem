@@ -1,11 +1,13 @@
 // src/lib/session.ts
 import { cookies } from "next/headers";
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { prisma } from "./prisma";
 
 export const SESSION_COOKIE_NAME = "reserva_session";
 // Signed marker of the ADMIN who started an impersonation ("preview as staff") session
 export const IMPERSONATOR_COOKIE_NAME = "reserva_impersonator";
+// Short-lived signed CSRF nonce for Google OAuth 2.0 authorization flow
+export const OAUTH_STATE_COOKIE_NAME = "reserva_oauth_state";
 
 const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 30; // 30 days
 const DEV_FALLBACK_SECRET = "dev-only-insecure-session-secret-change-me";
@@ -114,4 +116,99 @@ export async function setImpersonatorId(adminUserId: string) {
 export async function clearImpersonator() {
   const cookieStore = await cookies();
   cookieStore.delete(IMPERSONATOR_COOKIE_NAME);
+}
+
+/**
+ * Validates that a redirect target is a strictly relative internal path (prevents Open Redirect & XSS).
+ */
+export function sanitizeReturnTo(raw: unknown): string {
+  if (typeof raw !== "string") return "/";
+  const trimmed = raw.trim();
+  if (
+    !trimmed.startsWith("/") ||
+    trimmed.startsWith("//") ||
+    trimmed.includes("\\") ||
+    /[\r\n<>"'`]/.test(trimmed)
+  ) {
+    return "/";
+  }
+  return trimmed;
+}
+
+/**
+ * Resolves a safe origin URL from NEXT_PUBLIC_APP_URL or validated Host headers (prevents Host Header Injection).
+ */
+export function getSafeBaseUrl(req: Request): string {
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (configured && /^https?:\/\/[a-zA-Z0-9.-]+(:\d{1,5})?$/.test(configured)) {
+    return configured.replace(/\/$/, "");
+  }
+
+  const rawHost =
+    req.headers.get("x-forwarded-host") ||
+    req.headers.get("host") ||
+    "localhost:3000";
+  const firstHost = rawHost.split(",")[0].trim();
+  const safeHost = /^[a-zA-Z0-9.-]+(:\d{1,5})?$/.test(firstHost)
+    ? firstHost
+    : "localhost:3000";
+
+  const rawProto = req.headers.get("x-forwarded-proto")?.split(",")[0].trim();
+  const proto =
+    rawProto === "https" || rawProto === "http"
+      ? rawProto
+      : safeHost.includes("localhost") || safeHost.startsWith("127.0.0.1")
+      ? "http"
+      : "https";
+
+  return `${proto}://${safeHost}`;
+}
+
+/**
+ * Issues a signed CSRF nonce cookie (10 min TTL) and returns the URL-encoded OAuth state parameter.
+ */
+export async function issueOAuthState(rawReturnTo: string | null): Promise<string> {
+  const returnTo = sanitizeReturnTo(rawReturnTo);
+  const nonce = randomBytes(16).toString("hex");
+  const cookieStore = await cookies();
+  const ttlSec = 60 * 10; // 10 minutes
+  cookieStore.set(
+    OAUTH_STATE_COOKIE_NAME,
+    createSessionToken(nonce, ttlSec),
+    cookieOptions(ttlSec)
+  );
+  return encodeURIComponent(JSON.stringify({ returnTo, nonce }));
+}
+
+/**
+ * Verifies the OAuth callback state parameter against the signed CSRF cookie and consumes the cookie.
+ */
+export async function verifyAndConsumeOAuthState(
+  stateStr: string | null
+): Promise<{ valid: boolean; returnTo: string }> {
+  const cookieStore = await cookies();
+  const rawCookie = cookieStore.get(OAUTH_STATE_COOKIE_NAME)?.value;
+  cookieStore.delete(OAUTH_STATE_COOKIE_NAME);
+
+  const expectedNonce = verifySessionToken(rawCookie);
+  let returnTo = "/";
+  let receivedNonce: string | null = null;
+
+  if (stateStr) {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(stateStr));
+      returnTo = sanitizeReturnTo(parsed?.returnTo);
+      if (typeof parsed?.nonce === "string") {
+        receivedNonce = parsed.nonce;
+      }
+    } catch {
+      return { valid: false, returnTo: "/" };
+    }
+  }
+
+  if (!expectedNonce || !receivedNonce || expectedNonce !== receivedNonce) {
+    return { valid: false, returnTo };
+  }
+
+  return { valid: true, returnTo };
 }

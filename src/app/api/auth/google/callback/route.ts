@@ -1,63 +1,52 @@
 // src/app/api/auth/google/callback/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { setSessionUserId } from "@/lib/session";
+import {
+  getSafeBaseUrl,
+  setSessionUserId,
+  verifyAndConsumeOAuthState,
+} from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-function getBaseUrl(req: Request): string {
-  const host =
-    req.headers.get("x-forwarded-host") ||
-    req.headers.get("host") ||
-    "localhost:3000";
-  const proto =
-    req.headers.get("x-forwarded-proto") ||
-    (host.includes("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
 export async function GET(req: Request) {
+  const baseUrl = getSafeBaseUrl(req);
   try {
     const { searchParams } = new URL(req.url);
     const code = searchParams.get("code");
     const stateStr = searchParams.get("state");
     const error = searchParams.get("error");
 
-    let returnTo = "/";
-    if (stateStr) {
-      try {
-        const parsed = JSON.parse(decodeURIComponent(stateStr));
-        if (
-          typeof parsed.returnTo === "string" &&
-          parsed.returnTo.startsWith("/") &&
-          !parsed.returnTo.startsWith("//") &&
-          !parsed.returnTo.includes("\\")
-        ) {
-          returnTo = parsed.returnTo;
-        }
-      } catch (e) {
-        console.error("State parse error:", e);
-      }
-    }
+    const { valid: isStateValid, returnTo } = await verifyAndConsumeOAuthState(stateStr);
 
     if (error) {
       console.error("Google OAuth error:", error);
-      return NextResponse.redirect(`${getBaseUrl(req)}${returnTo}?authError=${encodeURIComponent(error)}`);
+      return NextResponse.redirect(
+        `${baseUrl}${returnTo}?authError=${encodeURIComponent(error)}`
+      );
+    }
+
+    if (!isStateValid) {
+      return NextResponse.redirect(
+        `${baseUrl}${returnTo}?authError=invalid_oauth_state`
+      );
     }
 
     if (!code) {
-      return NextResponse.redirect(`${getBaseUrl(req)}${returnTo}?authError=no_code`);
+      return NextResponse.redirect(`${baseUrl}${returnTo}?authError=no_code`);
     }
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = `${getBaseUrl(req)}/api/auth/google/callback`;
+    const redirectUri = `${baseUrl}/api/auth/google/callback`;
 
     if (!clientId || !clientSecret) {
-      return NextResponse.redirect(`${getBaseUrl(req)}${returnTo}?authError=missing_google_credentials`);
+      return NextResponse.redirect(
+        `${baseUrl}${returnTo}?authError=missing_google_credentials`
+      );
     }
 
-    // 1. Intercambiar authorization code por access token
+    // 1. Exchange authorization code for access token
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -74,29 +63,35 @@ export async function GET(req: Request) {
 
     if (!tokenResponse.ok || !tokenData.access_token) {
       console.error("Google token exchange failed:", tokenData);
-      return NextResponse.redirect(`${getBaseUrl(req)}${returnTo}?authError=token_exchange_failed`);
+      return NextResponse.redirect(
+        `${baseUrl}${returnTo}?authError=token_exchange_failed`
+      );
     }
 
-    // 2. Obtener perfil del usuario desde Google
-    const userinfoResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
-    });
+    // 2. Fetch user profile from Google
+    const userinfoResponse = await fetch(
+      "https://www.googleapis.com/oauth2/v3/userinfo",
+      {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      }
+    );
 
     const profile = await userinfoResponse.json();
 
     if (!profile.email) {
-      return NextResponse.redirect(`${getBaseUrl(req)}${returnTo}?authError=no_email_provided`);
+      return NextResponse.redirect(
+        `${baseUrl}${returnTo}?authError=no_email_provided`
+      );
     }
 
     const cleanEmail = profile.email.toLowerCase();
 
-    // 3. Vincular o crear usuario en la base de datos
+    // 3. Link or create user in database
     let user = await prisma.user.findUnique({
       where: { email: cleanEmail },
     });
 
     if (user) {
-      // Si ya existía, actualizar su googleId y avatar si hace falta
       user = await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -106,7 +101,6 @@ export async function GET(req: Request) {
         },
       });
     } else {
-      // Nuevo usuario verificado con Google
       user = await prisma.user.create({
         data: {
           email: cleanEmail,
@@ -118,18 +112,17 @@ export async function GET(req: Request) {
       });
     }
 
-    // 4. Crear cookie de sesión segura
+    // 4. Issue signed session cookie
     await setSessionUserId(user.id);
 
-    // 5. Redireccionar según el rol
+    // 5. Redirect based on role
     if (user.role === "ADMIN" || user.role === "PROVIDER") {
-      // Si es doctor o admin, llevarlo a su panel de gestión
-      return NextResponse.redirect(`${getBaseUrl(req)}/admin`);
+      return NextResponse.redirect(`${baseUrl}/admin`);
     }
 
-    return NextResponse.redirect(`${getBaseUrl(req)}${returnTo}`);
+    return NextResponse.redirect(`${baseUrl}${returnTo}`);
   } catch (error: any) {
     console.error("Google callback error:", error);
-    return NextResponse.redirect(`${getBaseUrl(req)}/?authError=${encodeURIComponent(error.message)}`);
+    return NextResponse.redirect(`${baseUrl}/?authError=oauth_callback_failed`);
   }
 }

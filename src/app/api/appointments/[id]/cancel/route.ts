@@ -34,6 +34,18 @@ export async function POST(
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
+    if (!isOwner && user.role === "PROVIDER") {
+      const ownStaff = await prisma.staffProfile.findFirst({
+        where: { userId: user.id },
+      });
+      if (!ownStaff || ownStaff.id !== appointment.staffId) {
+        return NextResponse.json(
+          { error: "Solo puedes cancelar citas asignadas a tu propia agenda." },
+          { status: 403 }
+        );
+      }
+    }
+
     const settings = await prisma.businessSettings.findFirst({ where: { id: 1 } });
     const minNotice = settings?.minCancelNoticeHours ?? 6;
 

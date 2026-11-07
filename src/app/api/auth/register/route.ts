@@ -28,23 +28,23 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const { name, email, password, phone } = body;
 
-    if (!name || typeof name !== "string" || name.trim().length < 2) {
+    if (!name || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 100) {
       return NextResponse.json(
-        { error: "Por favor ingresa tu nombre completo (mínimo 2 letras)." },
+        { error: "Por favor ingresa tu nombre completo (entre 2 y 100 caracteres)." },
         { status: 400 }
       );
     }
 
-    if (!email || typeof email !== "string" || !email.includes("@")) {
+    if (!email || typeof email !== "string" || !email.includes("@") || email.length > 254) {
       return NextResponse.json(
         { error: "Por favor ingresa un correo electrónico válido." },
         { status: 400 }
       );
     }
 
-    if (!password || typeof password !== "string" || password.length < 6) {
+    if (!password || typeof password !== "string" || password.length < 6 || password.length > 128) {
       return NextResponse.json(
-        { error: "La contraseña debe tener al menos 6 caracteres." },
+        { error: "La contraseña debe tener entre 6 y 128 caracteres." },
         { status: 400 }
       );
     }

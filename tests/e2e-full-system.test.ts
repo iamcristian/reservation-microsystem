@@ -64,7 +64,7 @@ class BrowserSession {
       json = null;
     }
 
-    return { status: res.status, ok: res.ok, json, text };
+    return { status: res.status, ok: res.ok, json, text, headers: res.headers, url: res.url };
   }
 }
 
@@ -678,6 +678,51 @@ async function runE2E() {
     assert(
       providerCrossOverride.status === 403,
       "SEC-04 (BOLA/BFLA): PROVIDER blocked with HTTP 403 when attempting day-override on another doctor's schedule"
+    );
+
+    // SEC-07: Open Redirect, XSS & CSRF State Verification in Google OAuth endpoints
+    const oauthXssRes = await anon.request(
+      `/api/auth/google?returnTo=${encodeURIComponent("//evil.example.com/<script>alert(1)</script>")}`
+    );
+    assert(
+      !oauthXssRes.text.includes("evil.example.com") && !oauthXssRes.text.includes("<script>alert(1)"),
+      "SEC-07 (Open Redirect / XSS): /api/auth/google sanitizes malicious returnTo parameters to safe relative path '/'"
+    );
+
+    const oauthCsrfCallback = await fetch(
+      `${BASE_URL}/api/auth/google/callback?code=forged_code&state=${encodeURIComponent(
+        JSON.stringify({ returnTo: "/", nonce: "forged_nonce" })
+      )}`,
+      { redirect: "manual" }
+    );
+    const callbackLocation = oauthCsrfCallback.headers.get("location") || "";
+    assert(
+      oauthCsrfCallback.status >= 300 &&
+        oauthCsrfCallback.status < 400 &&
+        callbackLocation.includes("authError=invalid_oauth_state"),
+      "SEC-07 (OAuth CSRF): /api/auth/google/callback rejects callback without matching signed reserva_oauth_state cookie"
+    );
+
+    // SEC-08: HTTP Security Headers & Server Fingerprinting Removal
+    assert(
+      homePage.headers.get("x-frame-options") === "DENY" &&
+        homePage.headers.get("x-content-type-options") === "nosniff" &&
+        homePage.headers.get("referrer-policy") === "strict-origin-when-cross-origin" &&
+        homePage.headers.get("x-powered-by") === null,
+      "SEC-08 (Security Headers): Responses enforce X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy, and omit X-Powered-By"
+    );
+
+    // SEC-10: Bcrypt Long-Password DoS Protection (> 128 chars rejected with HTTP 400)
+    const longPasswordRes = await anon.request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: "alejandro@sonrisa.com",
+        password: "A".repeat(500),
+      }),
+    });
+    assert(
+      longPasswordRes.status === 400,
+      "SEC-10 (Input Bounds / Bcrypt DoS): /api/auth/login rejects oversized passwords (> 128 chars) with HTTP 400"
     );
   } finally {
     // Total test data cleanup to leave database in pristine state

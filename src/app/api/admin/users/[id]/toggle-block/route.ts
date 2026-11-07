@@ -61,7 +61,9 @@ export async function PUT(
       },
     });
 
-    return NextResponse.json({ ok: true, user: updated });
+    const { passwordHash: _ph, googleId: _gid, ...safeUser } = updated;
+
+    return NextResponse.json({ ok: true, user: safeUser });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -95,7 +95,7 @@ export async function POST(req: Request) {
         user = existingUser;
       } else {
         // New customer: create account with password
-        if (!customerPassword || customerPassword.length < 6) {
+        if (!customerPassword || typeof customerPassword !== "string" || customerPassword.length < 6 || customerPassword.length > 128) {
           return NextResponse.json(
             {
               error: "Crea una contraseña (mínimo 6 caracteres) para proteger tu cuenta y tus citas.",
@@ -401,7 +401,7 @@ export async function POST(req: Request) {
         endAt,
         status: "CONFIRMED",
         priceSnapshot: service.price,
-        customerNotes: customerNotes?.trim() || null,
+        customerNotes: customerNotes ? String(customerNotes).trim().slice(0, 500) : null,
       },
       include: {
         service: true,

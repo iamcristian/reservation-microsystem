@@ -29,14 +29,14 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const { email, password, role } = body;
 
-    if (!email || typeof email !== "string") {
+    if (!email || typeof email !== "string" || email.length > 254) {
       return NextResponse.json(
         { error: "Debes ingresar tu correo electrónico." },
         { status: 400 }
       );
     }
 
-    if (!password || typeof password !== "string") {
+    if (!password || typeof password !== "string" || password.length > 128) {
       return NextResponse.json(
         { error: "Debes ingresar tu contraseña." },
         { status: 400 }

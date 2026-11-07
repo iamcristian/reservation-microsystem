@@ -1,26 +1,17 @@
 // src/app/api/auth/google/route.ts
 import { NextResponse } from "next/server";
+import { getSafeBaseUrl, issueOAuthState, sanitizeReturnTo } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-function getBaseUrl(req: Request): string {
-  const host =
-    req.headers.get("x-forwarded-host") ||
-    req.headers.get("host") ||
-    "localhost:3000";
-  const proto =
-    req.headers.get("x-forwarded-proto") ||
-    (host.includes("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const returnTo = searchParams.get("returnTo") || "/";
+  const returnTo = sanitizeReturnTo(searchParams.get("returnTo"));
+  const baseUrl = getSafeBaseUrl(req);
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
 
-  // Si no se han configurado las claves de Google Cloud Console en .env
+  // If Google Cloud Console credentials are not configured in .env
   if (!clientId || clientId.trim().length === 0 || clientId.includes("TU_GOOGLE_CLIENT_ID")) {
     const errorHtml = `
       <!DOCTYPE html>
@@ -46,12 +37,12 @@ export async function GET(req: Request) {
           <div class="bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs space-y-2 text-zinc-700">
             <div class="font-bold text-zinc-900">Pasos rápidos en Google Cloud Console:</div>
             <ol class="list-decimal list-inside space-y-1 text-zinc-600">
-              <li>Crea un proyecto en <a href="https://console.cloud.google.com" target="_blank" class="text-blue-600 underline">console.cloud.google.com</a>.</li>
+              <li>Crea un proyecto en <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">console.cloud.google.com</a>.</li>
               <li>Ve a <b>APIs & Services → Credentials</b>.</li>
               <li>Crea una <b>OAuth 2.0 Client ID (Web Application)</b>.</li>
               <li>Agrega en <b>Authorized Redirect URIs</b>:
                 <code class="block mt-1 bg-white p-2 rounded-lg border border-zinc-300 font-mono text-[11px] text-zinc-800 break-all select-all">
-                  ${getBaseUrl(req)}/api/auth/google/callback
+                  ${baseUrl}/api/auth/google/callback
                 </code>
               </li>
               <li>Copia las credenciales a tu archivo <code>.env</code>:
@@ -76,9 +67,9 @@ GOOGLE_CLIENT_SECRET="tu-client-secret"</pre>
     });
   }
 
-  // Redirigir a la pantalla de consentimiento de Google OAuth 2.0
-  const redirectUri = `${getBaseUrl(req)}/api/auth/google/callback`;
-  const state = encodeURIComponent(JSON.stringify({ returnTo }));
+  // Redirect to Google OAuth 2.0 consent screen with signed CSRF state token
+  const redirectUri = `${baseUrl}/api/auth/google/callback`;
+  const state = await issueOAuthState(returnTo);
 
   const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   googleAuthUrl.searchParams.set("client_id", clientId);
