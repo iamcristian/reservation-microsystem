@@ -408,12 +408,13 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
     (a: any) => a.status === "RESCHEDULED_BY_STAFF"
   );
 
-  const unreadCancelNotif = notifications.find(
+  const unreadCancelNotifs = notifications.filter(
     (n: any) =>
       !n.isRead &&
       !dismissedNotifIds.includes(n.id) &&
       n.type === "APPOINTMENT_CANCELLED"
   );
+  const unreadCancelNotif = unreadCancelNotifs[0] || null;
 
   const cancelledByStaff = userAppointments.find(
     (a: any) =>
@@ -422,6 +423,24 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
       !dismissedNotifIds.includes(a.id) &&
       !notifications.some((n: any) => n.appointmentId === a.id && n.isRead)
   );
+
+  const targetCancelledApt = unreadCancelNotif?.appointmentId
+    ? userAppointments.find((a: any) => a.id === unreadCancelNotif.appointmentId)
+    : cancelledByStaff;
+
+  const targetAptDate = targetCancelledApt?.startAt ? new Date(targetCancelledApt.startAt) : null;
+  const targetTimeStr = targetAptDate && !isNaN(targetAptDate.getTime())
+    ? targetAptDate.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+    : "";
+  const targetDateStr = targetAptDate && !isNaN(targetAptDate.getTime())
+    ? targetAptDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" })
+    : "";
+  const targetServiceName = targetCancelledApt?.service?.name || "";
+  const targetStaffName =
+    targetCancelledApt?.staff?.displayName ||
+    targetCancelledApt?.staff?.name ||
+    "el profesional";
+  const targetCancelReason = targetCancelledApt?.staffMoveReason || "";
 
   return (
     <div className="w-full max-w-md md:max-w-3xl lg:max-w-4xl xl:max-w-5xl mx-auto min-h-screen md:min-h-0 md:my-6 md:rounded-[32px] bg-white text-[#1F1F23] pb-16 md:pb-8 shadow-2xl relative border-x md:border border-zinc-200/80 flex flex-col transition-all duration-300">
@@ -601,49 +620,77 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
               ✕
             </div>
             <div className="text-xs flex-1">
-              <div className="font-bold text-sm text-red-300">
-                {unreadCancelNotif?.title || "Tu cita fue cancelada por el profesional"}
+              <div className="font-bold text-sm text-red-300 flex items-center justify-between flex-wrap gap-1">
+                <span>
+                  {unreadCancelNotif?.title &&
+                  unreadCancelNotif.title !== "Tu cita fue cancelada por el profesional"
+                    ? unreadCancelNotif.title
+                    : targetTimeStr
+                    ? `Se canceló tu cita de las ${targetTimeStr}${targetServiceName ? ` (${targetServiceName})` : ""}`
+                    : "Tu cita fue cancelada por el profesional"}
+                </span>
+                {unreadCancelNotifs.length > 1 && (
+                  <span className="bg-red-500/20 text-red-300 border border-red-500/40 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                    Aviso 1 de {unreadCancelNotifs.length}
+                  </span>
+                )}
               </div>
-              {unreadCancelNotif ? (
+              {targetCancelledApt ? (
+                <p className="mt-1 text-zinc-200 leading-relaxed">
+                  Tu cita de <strong className="text-white font-semibold">{targetServiceName || "servicio"}</strong> con{" "}
+                  <strong className="text-white font-semibold">{targetStaffName}</strong> programada para el{" "}
+                  <span className="text-red-200 font-semibold">{targetDateStr} a las {targetTimeStr}</span>{" "}
+                  tuvo que cancelarse debido a:{" "}
+                  <span className="italic text-zinc-300 font-medium">&quot;{targetCancelReason || "No atiendo hoy por descanso/imprevisto"}&quot;</span>.
+                  <br />
+                  <span className="text-zinc-400 mt-1 block">
+                    Por favor elige un nuevo horario para reagendar tu atención cuando desees.
+                  </span>
+                </p>
+              ) : unreadCancelNotif ? (
                 <p className="mt-1 text-zinc-200 leading-relaxed">
                   {unreadCancelNotif.message}
-                </p>
-              ) : cancelledByStaff ? (
-                <p className="mt-1 text-zinc-200 leading-relaxed">
-                  El profesional tuvo que cancelar tu cita de{" "}
-                  <b>{cancelledByStaff.service?.name || "servicio"}</b> (
-                  {new Date(cancelledByStaff.startAt).toLocaleDateString("es-ES", {
-                    weekday: "short",
-                    day: "numeric",
-                  })}{" "}
-                  a las{" "}
-                  {new Date(cancelledByStaff.startAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                  ).
-                  <br />
-                  <span className="text-zinc-300 mt-0.5 block">
-                    Motivo: &quot;{cancelledByStaff.staffMoveReason || "Imprevisto médico"}&quot;
-                  </span>
                 </p>
               ) : null}
               <div className="mt-3 flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => {
+                    if (unreadCancelNotif) {
+                      handleDismissNotification(
+                        unreadCancelNotif.id,
+                        unreadCancelNotif.appointmentId || undefined
+                      );
+                    } else if (cancelledByStaff) {
+                      handleDismissNotification(
+                        cancelledByStaff.id,
+                        cancelledByStaff.id
+                      );
+                    }
+                    if (targetCancelledApt?.service) {
+                      setSelectedService(targetCancelledApt.service);
+                    }
+                    if (targetCancelledApt?.staff?.id) {
+                      setSelectedStaffId(targetCancelledApt.staff.id);
+                    }
                     setActiveTab("book");
-                    setStep(1);
+                    setStep(targetCancelledApt?.service ? 3 : 1);
                   }}
-                  className="bg-white text-zinc-900 font-bold px-3.5 py-1.5 rounded-full text-xs hover:bg-zinc-100 shadow-sm"
+                  className="bg-white text-zinc-900 font-bold px-3.5 py-1.5 rounded-full text-xs hover:bg-zinc-100 shadow-sm transition-all"
                 >
                   📅 Elegir nuevo horario
                 </button>
                 <button
                   onClick={() => {
                     if (unreadCancelNotif) {
-                      handleDismissNotification(unreadCancelNotif.id, unreadCancelNotif.appointmentId || undefined);
+                      handleDismissNotification(
+                        unreadCancelNotif.id,
+                        unreadCancelNotif.appointmentId || undefined
+                      );
                     } else if (cancelledByStaff) {
-                      handleDismissNotification(cancelledByStaff.id, cancelledByStaff.id);
+                      handleDismissNotification(
+                        cancelledByStaff.id,
+                        cancelledByStaff.id
+                      );
                     }
                   }}
                   className="bg-white/15 hover:bg-white/25 text-white font-medium px-3.5 py-1.5 rounded-full text-xs transition-all"

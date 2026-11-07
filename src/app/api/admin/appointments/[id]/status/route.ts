@@ -38,13 +38,25 @@ export async function PUT(
     let finalCustomer = appointment.customer;
 
     if (status === "CANCELLED") {
+      const aptDate = new Date(appointment.startAt);
+      const timeFormatted = aptDate.toLocaleTimeString("es-ES", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const dateFormatted = aptDate.toLocaleDateString("es-ES", {
+        weekday: "long",
+        day: "numeric",
+        month: "short",
+      });
+      const serviceName = appointment.service?.name || "Servicio";
+
       await prisma.notification.create({
         data: {
           userId: appointment.customerId,
           appointmentId: appointment.id,
           type: "APPOINTMENT_CANCELLED",
-          title: "Tu cita fue cancelada por el profesional",
-          message: `Tu cita de ${appointment.service?.name || "servicio"} con ${appointment.staff?.displayName || "el profesional"} fue cancelada: "${reason || "Imprevisto de agenda"}". Puedes agendar un nuevo horario cuando desees.`,
+          title: `Se canceló tu cita de las ${timeFormatted} (${serviceName})`,
+          message: `Tu cita de ${serviceName} del ${dateFormatted} a las ${timeFormatted} con ${appointment.staff?.displayName || "el profesional"} fue cancelada: "${reason || "Imprevisto de agenda"}". Puedes agendar un nuevo horario cuando desees.`,
         },
       });
     } else if (status === "COMPLETED") {

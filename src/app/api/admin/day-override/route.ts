@@ -137,13 +137,25 @@ export async function POST(req: Request) {
             },
           });
 
+          const aptDate = new Date(apt.startAt);
+          const timeFormatted = aptDate.toLocaleTimeString("es-ES", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          const dateFormatted = aptDate.toLocaleDateString("es-ES", {
+            weekday: "long",
+            day: "numeric",
+            month: "short",
+          });
+          const serviceName = apt.service?.name || "Servicio";
+
           await prisma.notification.create({
             data: {
               userId: apt.customerId,
               appointmentId: apt.id,
               type: "APPOINTMENT_CANCELLED",
-              title: "Tu cita fue cancelada por el profesional",
-              message: `Tu cita con el ${apt.staff.displayName} tuvo que cancelarse debido a: "${reason || "Imprevisto personal"}". Por favor agenda un nuevo horario cuando desees.`,
+              title: `Se canceló tu cita de las ${timeFormatted} (${serviceName})`,
+              message: `Tu cita de ${serviceName} del ${dateFormatted} a las ${timeFormatted} con ${apt.staff.displayName} tuvo que cancelarse debido a: "${reason || "Imprevisto personal"}". Por favor agenda un nuevo horario cuando desees.`,
             },
           });
         }
