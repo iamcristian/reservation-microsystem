@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, getImpersonatorId } from "@/lib/session";
-import { canCustomerCancelAppointment } from "@/lib/booking-rules";
+import { getCustomerBootstrapAppointments } from "@/lib/appointment-queries";
 
 export const dynamic = "force-dynamic";
 
@@ -86,36 +86,35 @@ export async function GET() {
       : staff.map(({ userId: _userId, ...rest }) => rest);
 
     let userAppointments: any[] = [];
+    let userHistory: {
+      items: any[];
+      nextCursor: string | null;
+      hasMore: boolean;
+      totalCount: number;
+    } = {
+      items: [],
+      nextCursor: null,
+      hasMore: false,
+      totalCount: 0,
+    };
     let notifications: any[] = [];
 
     if (currentUser) {
-      const apts = await prisma.appointment.findMany({
-        where: { customerId: currentUser.id },
-        include: {
-          service: true,
-          staff: true,
-        },
-        orderBy: { startAt: "desc" },
-      });
-
-      userAppointments = apts.map((apt) => {
-        const cancelCheck = canCustomerCancelAppointment(
-          apt,
+      const [custData, notifs] = await Promise.all([
+        getCustomerBootstrapAppointments(
+          currentUser.id,
           settings?.minCancelNoticeHours ?? 6
-        );
-        return {
-          ...apt,
-          canCancel: cancelCheck.allowed,
-          cancelReason: cancelCheck.reason,
-          isFreeCancellationBecauseOfStaff: cancelCheck.isFreeCancellationBecauseOfStaff,
-        };
-      });
+        ),
+        prisma.notification.findMany({
+          where: { userId: currentUser.id },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        }),
+      ]);
 
-      notifications = await prisma.notification.findMany({
-        where: { userId: currentUser.id },
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      });
+      userAppointments = custData.userAppointments;
+      userHistory = custData.userHistory;
+      notifications = notifs;
     }
 
     let allAppointments: any[] = [];
@@ -172,6 +171,7 @@ export async function GET() {
       currentUser: safeCurrentUser,
       impersonatorId,
       userAppointments,
+      userHistory,
       allAppointments,
       notifications,
       allUsers,
@@ -186,6 +186,7 @@ export async function GET() {
         staff: [],
         currentUser: null,
         userAppointments: [],
+        userHistory: { items: [], nextCursor: null, hasMore: false, totalCount: 0 },
         allAppointments: [],
         notifications: [],
         allUsers: [],

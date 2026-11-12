@@ -721,6 +721,59 @@ async function runE2E() {
       "PUT /api/admin/shifts rejects inverted shift hours 20:00 to 19:00 with HTTP 400"
     );
 
+    // 10b. Customer History Cursor Pagination & Bounded Bootstrap
+    console.log("\n--- 10b. Appointment History Pagination (/api/appointments/history) ---");
+    const anonHistRes = await anon.request("/api/appointments/history");
+    assert(
+      anonHistRes.status === 401,
+      "History AuthN: Anonymous request to GET /api/appointments/history rejected with HTTP 401"
+    );
+
+    if (createdUserId) {
+      for (let k = 4; k <= 12; k++) {
+        const histStart = new Date(Date.now() - k * 24 * 60 * 60 * 1000);
+        const histEnd = new Date(histStart.getTime() + 30 * 60 * 1000);
+        const createdHist = await prisma.appointment.create({
+          data: {
+            customerId: createdUserId,
+            staffId: drAlejandro.id,
+            serviceId: firstService.id,
+            startAt: histStart,
+            endAt: histEnd,
+            status: "COMPLETED",
+            priceSnapshot: firstService.price || 25,
+          },
+        });
+        createdAppointmentIds.push(createdHist.id);
+      }
+
+      const boundedBoot = await customerSession.request("/api/bootstrap");
+      const firstPageHistory = boundedBoot.json?.userHistory;
+      assert(
+        firstPageHistory &&
+          Array.isArray(firstPageHistory.items) &&
+          firstPageHistory.items.length === 6 &&
+          firstPageHistory.hasMore === true &&
+          firstPageHistory.totalCount >= 10 &&
+          Boolean(firstPageHistory.nextCursor),
+        `Bootstrap Pagination: Returns initial slice of 6 history rows out of ${firstPageHistory?.totalCount} with cursor`
+      );
+
+      const page2Res = await customerSession.request(
+        `/api/appointments/history?cursor=${encodeURIComponent(firstPageHistory.nextCursor)}&limit=6`
+      );
+      const page1Ids = new Set((firstPageHistory.items || []).map((x: any) => x.id));
+      const page2Items = page2Res.json?.items || [];
+      const noDuplicates = page2Items.every((x: any) => !page1Ids.has(x.id));
+      const noStaffLeak = page2Items.every(
+        (x: any) => x.staff?.user === undefined && x.staff?.userId === undefined
+      );
+      assert(
+        page2Res.status === 200 && page2Items.length > 0 && noDuplicates && noStaffLeak,
+        `History Endpoint: Cursor page 2 returns ${page2Items.length} non-overlapping records with safe staff fields`
+      );
+    }
+
     // 11. OWASP Top 10 & API Security Hardening Verification
     console.log("\n--- 11. OWASP Top 10 & API Security Hardening (SEC-01 to SEC-07) ---");
 

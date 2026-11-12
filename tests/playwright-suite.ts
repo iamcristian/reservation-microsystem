@@ -560,7 +560,8 @@ async function runBrowserTests() {
     // TC-10: Customer Self-Cancellation & History Archive (BUG-05)
     // ========================================================================
     console.log("\n--- TC-10: Customer Cancellation & History Archive ---");
-    // Seed a past unticked CONFIRMED booking for this test customer to verify it moves to History automatically
+    // Seed 1 past unticked CONFIRMED booking + 8 historical COMPLETED bookings (total 10 after 1 cancellation)
+    // to verify Facebook-style cursor infinite scroll (initial batch of 6 -> auto-load remaining on scroll).
     const pwCustomer = await prisma.user.findUnique({
       where: { email: testCustomerEmail },
       include: { appointments: true },
@@ -580,6 +581,22 @@ async function runBrowserTests() {
           priceSnapshot: refApt.priceSnapshot,
         },
       });
+
+      for (let dOffset = 4; dOffset <= 11; dOffset++) {
+        const sAt = new Date(Date.now() - dOffset * 24 * 60 * 60 * 1000);
+        const eAt = new Date(sAt.getTime() + 30 * 60 * 1000);
+        await prisma.appointment.create({
+          data: {
+            customerId: pwCustomer.id,
+            staffId: refApt.staffId,
+            serviceId: refApt.serviceId,
+            startAt: sAt,
+            endAt: eAt,
+            status: "COMPLETED",
+            priceSnapshot: refApt.priceSnapshot,
+          },
+        });
+      }
     }
 
     await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
@@ -618,9 +635,34 @@ async function runBrowserTests() {
       await page.waitForTimeout(400);
       const historyCard = await page.$("div:has-text('CANCELADA'), div:has-text('CONFIRMADA')");
       const pastUntickedCard = await page.$("text=FINALIZADA");
+      const initialHistoryCardsCount = await page
+        .locator("[data-testid='history-appointment-card']")
+        .count();
       assert(
         historyCard !== null && pastUntickedCard !== null,
         "TC-10: Archived cancelled and past unticked ('FINALIZADA') cards visible inside history drawer"
+      );
+      assert(
+        initialHistoryCardsCount === 6,
+        `TC-10 Pagination: History drawer initially renders 6 cards instead of dumping all (${initialHistoryCardsCount} rendered)`
+      );
+
+      // Scroll inside the history container to trigger IntersectionObserver infinite scroll
+      await page.evaluate(() => {
+        const box = document.querySelector("[data-testid='history-scroll-container']");
+        if (box) box.scrollTop = box.scrollHeight;
+      });
+      await page.waitForFunction(
+        () => document.querySelectorAll("[data-testid='history-appointment-card']").length === 10,
+        null,
+        { timeout: 6000 }
+      );
+      const expandedHistoryCardsCount = await page
+        .locator("[data-testid='history-appointment-card']")
+        .count();
+      assert(
+        expandedHistoryCardsCount === 10,
+        `TC-10 Infinite Scroll: Scrolling loads remaining page automatically (${expandedHistoryCardsCount}/10 shown)`
       );
     }
 

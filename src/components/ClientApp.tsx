@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Calendar,
   Clock,
@@ -131,8 +131,87 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
   const [showPwaModal, setShowPwaModal] = useState<boolean>(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [pwaInstalled, setPwaInstalled] = useState<boolean>(false);
-  // Collapsible past history in My Appointments
+  // Collapsible past history in My Appointments + Facebook-style cursor pagination
   const [showHistory, setShowHistory] = useState<boolean>(false);
+  const initialHistory = initialData?.userHistory;
+  const [historyItems, setHistoryItems] = useState<any[]>(() => initialHistory?.items || []);
+  const [historyCursor, setHistoryCursor] = useState<string | null>(
+    () => initialHistory?.nextCursor ?? null
+  );
+  const [historyHasMore, setHistoryHasMore] = useState<boolean>(
+    () => Boolean(initialHistory?.hasMore)
+  );
+  const [historyTotalCount, setHistoryTotalCount] = useState<number>(
+    () => initialHistory?.totalCount ?? 0
+  );
+  const [historyLoadingMore, setHistoryLoadingMore] = useState<boolean>(false);
+  const historyScrollRef = useRef<HTMLDivElement | null>(null);
+  const historySentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadingHistoryRef = useRef<boolean>(false);
+  const historyOwnerRef = useRef<string | null>(currentUser?.id || null);
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      historyOwnerRef.current = null;
+      setHistoryItems([]);
+      setHistoryCursor(null);
+      setHistoryHasMore(false);
+      setHistoryTotalCount(0);
+      setShowHistory(false);
+      return;
+    }
+
+    const incomingHistory = initialData?.userHistory;
+    if (!incomingHistory) return;
+
+    const freshItems: any[] = incomingHistory.items || [];
+    const ownerChanged = historyOwnerRef.current !== currentUser.id;
+    historyOwnerRef.current = currentUser.id;
+    setHistoryTotalCount(incomingHistory.totalCount ?? freshItems.length);
+
+    setHistoryItems((prev) => {
+      if (ownerChanged || prev.length <= 6) {
+        setHistoryCursor(incomingHistory.nextCursor ?? null);
+        setHistoryHasMore(Boolean(incomingHistory.hasMore));
+        return freshItems;
+      }
+      const freshIds = new Set(freshItems.map((item) => item.id));
+      return [...freshItems, ...prev.filter((item) => !freshIds.has(item.id))];
+    });
+  }, [currentUser?.id, initialData?.userHistory]);
+
+  const loadMoreHistory = useCallback(async () => {
+    if (!currentUser?.id || !historyHasMore || !historyCursor || loadingHistoryRef.current) {
+      return;
+    }
+    loadingHistoryRef.current = true;
+    setHistoryLoadingMore(true);
+    try {
+      const res = await fetch(
+        `/api/appointments/history?cursor=${encodeURIComponent(historyCursor)}&limit=6`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) return;
+      const page = await res.json().catch(() => null);
+      if (!page || !Array.isArray(page.items)) return;
+
+      setHistoryItems((prev) => {
+        const seen = new Set(prev.map((a) => a.id));
+        const nextRows = page.items.filter((a: any) => !seen.has(a.id));
+        return [...prev, ...nextRows];
+      });
+      setHistoryCursor(page.nextCursor ?? null);
+      setHistoryHasMore(Boolean(page.hasMore));
+      if (typeof page.totalCount === "number") {
+        setHistoryTotalCount(page.totalCount);
+      }
+    } catch (err) {
+      console.error("Failed to fetch additional appointment history:", err);
+    } finally {
+      loadingHistoryRef.current = false;
+      setHistoryLoadingMore(false);
+    }
+  }, [currentUser?.id, historyHasMore, historyCursor]);
 
   // Cancellation modal for policy warning
   const [policyModal, setPolicyModal] = useState<{
@@ -499,6 +578,148 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
     targetCancelledApt?.staff?.name ||
     "el profesional";
   const targetCancelReason = targetCancelledApt?.staffMoveReason || "";
+
+  useEffect(() => {
+    if (!showHistory || activeTab !== "my-appointments" || !historyHasMore) return;
+    const node = historySentinelRef.current;
+    const scrollRoot = historyScrollRef.current;
+    if (!node || !scrollRoot || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadMoreHistory();
+        }
+      },
+      { root: scrollRoot, rootMargin: "20px" }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [showHistory, activeTab, historyHasMore, loadMoreHistory]);
+
+  const handleRepeatService = (apt: any) => {
+    const latestService =
+      services.find((s: any) => s.id === (apt.serviceId || apt.service?.id)) || apt.service;
+    if (latestService) {
+      setSelectedService(latestService);
+      setStep(2);
+    } else {
+      setStep(1);
+    }
+    setActiveTab("book");
+  };
+
+  const renderHistoryCard = (apt: any) => {
+    const staffLabelLower = settings?.staffLabel?.toLowerCase() || "el profesional";
+
+    const variant =
+      apt.status === "NO_SHOW_ARCHIVED"
+        ? {
+            cardClass: "bg-zinc-100 border-zinc-200 text-zinc-600",
+            badgeText: "📁 JUSTIFICADA / ARCHIVADA",
+            badgeClass: "bg-zinc-300 text-zinc-800",
+            borderClass: "border-zinc-200/80",
+            repeatLabel: "📅 Volver a agendar",
+            note: (
+              <div className="mt-1 text-[11px] text-emerald-700 font-semibold">
+                ✓ El consultorio reinició tu contador. Esta falta pasada está archivada y no afecta tu cuenta actual.
+              </div>
+            ),
+          }
+        : apt.status === "COMPLETED"
+        ? {
+            cardClass: "bg-emerald-50/70 border-emerald-200",
+            badgeText: "✓ ATENDIDA",
+            badgeClass: "bg-emerald-700 text-white",
+            borderClass: "border-emerald-200/70",
+            repeatLabel: "📅 Repetir servicio",
+            note: null,
+          }
+        : isPastUntickedAppointment(apt, nowSnapshot)
+        ? {
+            cardClass: "bg-zinc-50 border-zinc-200",
+            badgeText: "⏱️ FINALIZADA",
+            badgeClass: "bg-zinc-700 text-white",
+            borderClass: "border-zinc-200/80",
+            repeatLabel: "📅 Repetir servicio",
+            note: (
+              <div className="mt-1 text-[11px] text-zinc-500">
+                Horario pasado — archivada automáticamente sin ocupar tu límite activo.
+              </div>
+            ),
+          }
+        : apt.staffMoveReason
+        ? {
+            cardClass: "bg-amber-50/60 border-amber-200",
+            badgeText: "✕ CANCELADA POR PROFESIONAL",
+            badgeClass: "bg-amber-200 text-amber-900",
+            borderClass: "border-zinc-200/80",
+            repeatLabel: "📅 Volver a agendar",
+            note: (
+              <div className="mt-2 p-2 rounded-xl bg-white/80 border border-amber-200 text-[11px] text-amber-900">
+                <b>Motivo indicado por {staffLabelLower}:</b> &quot;{apt.staffMoveReason}&quot;
+              </div>
+            ),
+          }
+        : {
+            cardClass: "bg-zinc-100 border-zinc-200 text-zinc-600",
+            badgeText: "✕ CANCELADA",
+            badgeClass: "bg-zinc-300 text-zinc-700",
+            borderClass: "border-zinc-200/80",
+            repeatLabel: "📅 Volver a agendar",
+            note: (
+              <div className="mt-1 text-[11px] text-zinc-500 italic">
+                Cancelada a solicitud del cliente.
+              </div>
+            ),
+          };
+
+    return (
+      <div
+        key={apt.id}
+        data-testid="history-appointment-card"
+        className={`p-3.5 rounded-[22px] border text-xs transition-all ${variant.cardClass}`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-bold text-zinc-900">{apt.service?.name}</span>
+          <span
+            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0 ${variant.badgeClass}`}
+          >
+            {variant.badgeText}
+          </span>
+        </div>
+
+        <div className="mt-1.5 text-[11px] text-zinc-600 flex items-center gap-1.5 flex-wrap">
+          <Calendar className="w-3.5 h-3.5 text-zinc-400" />
+          <span>
+            {new Date(apt.startAt).toLocaleDateString("es-ES", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+            })}{" "}
+            •{" "}
+            {new Date(apt.startAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+          {apt.staff?.displayName && <span>• con {apt.staff.displayName}</span>}
+        </div>
+
+        {variant.note}
+
+        <div className={`mt-2.5 pt-2 border-t ${variant.borderClass} flex justify-end`}>
+          <button
+            type="button"
+            onClick={() => handleRepeatService(apt)}
+            className="px-3 py-1 rounded-full bg-[#1F1F23] text-white font-bold text-[11px] hover:bg-black transition-all flex items-center gap-1.5"
+          >
+            <span>{variant.repeatLabel}</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="w-full max-w-md md:max-w-3xl lg:max-w-4xl xl:max-w-5xl mx-auto min-h-screen md:min-h-0 md:my-6 md:rounded-[32px] bg-white text-[#1F1F23] pb-16 md:pb-8 shadow-2xl relative border-x md:border border-zinc-200/80 flex flex-col transition-all duration-300">
@@ -1636,26 +1857,10 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
             const activeApts = userAppointments.filter((a: any) =>
               isUpcomingActiveAppointment(a, listNow)
             );
-            const pastUntickedApts = userAppointments.filter((a: any) =>
-              isPastUntickedAppointment(a, listNow)
-            );
             const activeNoShowApts = userAppointments.filter(
               (a: any) => a.status === "NO_SHOW"
             );
-            const archivedNoShowApts = userAppointments.filter(
-              (a: any) => a.status === "NO_SHOW_ARCHIVED"
-            );
-            const completedApts = userAppointments.filter(
-              (a: any) => a.status === "COMPLETED"
-            );
-            const cancelledApts = userAppointments.filter(
-              (a: any) => a.status === "CANCELLED"
-            );
-            const historyTotal =
-              completedApts.length +
-              pastUntickedApts.length +
-              archivedNoShowApts.length +
-              cancelledApts.length;
+            const historyTotal = Math.max(historyTotalCount, historyItems.length);
 
             return (
               <>
@@ -1897,204 +2102,50 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     </button>
 
                     {showHistory && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2.5">
-                        {archivedNoShowApts.map((apt: any) => (
-                          <div
-                            key={apt.id}
-                            className="p-3.5 rounded-[22px] bg-zinc-100 border border-zinc-200 text-xs text-zinc-600"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-zinc-800">
-                                {apt.service?.name}
-                              </span>
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-zinc-300 text-zinc-800">
-                                📁 JUSTIFICADA / ARCHIVADA
-                              </span>
-                            </div>
-                            <div className="mt-1 text-[11px] text-emerald-700 font-semibold">
-                              ✓ El consultorio reinició tu contador. Esta falta
-                              pasada está archivada y no afecta tu cuenta
-                              actual.
-                            </div>
-                          </div>
-                        ))}
+                      <div className="space-y-3 pt-2.5">
+                        <div className="flex items-center justify-between text-[11px] text-zinc-500 px-1">
+                          <span>
+                            Mostrando <b>{historyItems.length}</b> de <b>{historyTotal}</b> citas
+                          </span>
+                          {historyHasMore && (
+                            <span>Desliza hacia abajo para cargar más ↓</span>
+                          )}
+                        </div>
 
-                        {completedApts.map((apt: any) => (
-                          <div
-                            key={apt.id}
-                            className="p-3.5 rounded-[22px] bg-emerald-50/70 border border-emerald-200 text-xs"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-zinc-900">
-                                {apt.service?.name}
-                              </span>
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-700 text-white">
-                                ✓ ATENDIDA
-                              </span>
-                            </div>
-                            <div className="mt-1.5 text-[11px] text-zinc-600 flex items-center gap-1.5">
-                              <Calendar className="w-3.5 h-3.5 text-zinc-400" />
-                              <span>
-                                {new Date(apt.startAt).toLocaleDateString("es-ES", {
-                                  weekday: "short",
-                                  day: "numeric",
-                                  month: "short",
-                                })}{" "}
-                                •{" "}
-                                {new Date(apt.startAt).toLocaleTimeString([], {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </span>
-                              {apt.staff?.displayName && (
-                                <span>• con {apt.staff.displayName}</span>
-                              )}
-                            </div>
-                            <div className="mt-2 pt-2 border-t border-emerald-200/70 flex justify-end">
+                        <div
+                          ref={historyScrollRef}
+                          data-testid="history-scroll-container"
+                          className="max-h-[360px] overflow-y-auto pr-1 space-y-3 rounded-2xl"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                            {historyItems.map((apt: any) => renderHistoryCard(apt))}
+                          </div>
+
+                          {/* Infinite scroll sentinel & manual fallback trigger */}
+                          <div ref={historySentinelRef} className="pt-1 pb-2 flex flex-col items-center gap-2">
+                            {historyLoadingMore ? (
+                              <div className="flex items-center gap-2 py-2.5 text-xs font-semibold text-zinc-600">
+                                <span className="w-4 h-4 border-2 border-[#1F1F23] border-t-transparent rounded-full animate-spin" />
+                                <span>Cargando citas anteriores...</span>
+                              </div>
+                            ) : historyHasMore ? (
                               <button
-                                onClick={() => {
-                                  setSelectedService(apt.service);
-                                  setStep(2);
-                                  setActiveTab("book");
-                                }}
-                                className="px-3 py-1 rounded-full bg-[#1F1F23] text-white font-bold text-[11px] hover:bg-black transition-all"
+                                type="button"
+                                onClick={loadMoreHistory}
+                                className="px-4 py-2 rounded-full bg-zinc-100 hover:bg-zinc-200 border border-zinc-300 text-xs font-bold text-[#1F1F23] transition-all"
                               >
-                                📅 Repetir servicio
+                                Cargar más historial (quedan{" "}
+                                {Math.max(historyTotal - historyItems.length, 1)})
                               </button>
-                            </div>
-                          </div>
-                        ))}
-
-                        {pastUntickedApts.map((apt: any) => (
-                          <div
-                            key={apt.id}
-                            className="p-3.5 rounded-[22px] bg-zinc-50 border border-zinc-200 text-xs"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-zinc-900">
-                                {apt.service?.name}
-                              </span>
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-zinc-700 text-white">
-                                ⏱️ FINALIZADA
-                              </span>
-                            </div>
-                            <div className="mt-1.5 text-[11px] text-zinc-600 flex items-center gap-1.5 flex-wrap">
-                              <Calendar className="w-3.5 h-3.5 text-zinc-400" />
-                              <span>
-                                {new Date(apt.startAt).toLocaleDateString("es-ES", {
-                                  weekday: "short",
-                                  day: "numeric",
-                                  month: "short",
-                                })}{" "}
-                                •{" "}
-                                {new Date(apt.startAt).toLocaleTimeString([], {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </span>
-                              {apt.staff?.displayName && (
-                                <span>• con {apt.staff.displayName}</span>
-                              )}
-                            </div>
-                            <div className="mt-1 text-[11px] text-zinc-500">
-                              Horario pasado — archivada automáticamente sin ocupar tu límite activo.
-                            </div>
-                            <div className="mt-2 pt-2 border-t border-zinc-200/80 flex justify-end">
-                              <button
-                                onClick={() => {
-                                  if (apt.service) {
-                                    setSelectedService(apt.service);
-                                    setStep(2);
-                                  } else {
-                                    setStep(1);
-                                  }
-                                  setActiveTab("book");
-                                }}
-                                className="px-3 py-1 rounded-full bg-[#1F1F23] text-white font-bold text-[11px] hover:bg-black transition-all"
-                              >
-                                📅 Repetir servicio
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-
-                        {cancelledApts.map((apt: any) => {
-                          const isStaffCancelled = Boolean(apt.staffMoveReason);
-                          return (
-                            <div
-                              key={apt.id}
-                              className={`p-3.5 rounded-[22px] border text-xs transition-all ${
-                                isStaffCancelled
-                                  ? "bg-amber-50/60 border-amber-200"
-                                  : "bg-zinc-100 border-zinc-200 text-zinc-600"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-zinc-900">
-                                  {apt.service?.name}
-                                </span>
-                                <span
-                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                                    isStaffCancelled
-                                      ? "bg-amber-200 text-amber-900"
-                                      : "bg-zinc-300 text-zinc-700"
-                                  }`}
-                                >
-                                  {isStaffCancelled
-                                    ? "✕ CANCELADA POR PROFESIONAL"
-                                    : "✕ CANCELADA"}
-                                </span>
-                              </div>
-
-                              <div className="mt-1.5 text-[11px] text-zinc-600 flex items-center gap-1.5">
-                                <Calendar className="w-3.5 h-3.5 text-zinc-400" />
-                                <span>
-                                  {new Date(apt.startAt).toLocaleDateString("es-ES", {
-                                    weekday: "short",
-                                    day: "numeric",
-                                    month: "short",
-                                  })}{" "}
-                                  •{" "}
-                                  {new Date(apt.startAt).toLocaleTimeString([], {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
-                                </span>
-                                {apt.staff?.displayName && (
-                                  <span>• con {apt.staff.displayName}</span>
-                                )}
-                              </div>
-
-                              {apt.staffMoveReason ? (
-                                <div className="mt-2 p-2 rounded-xl bg-white/80 border border-amber-200 text-[11px] text-amber-900">
-                                  <b>Motivo indicado por {settings?.staffLabel?.toLowerCase() || "el profesional"}:</b> &quot;{apt.staffMoveReason}&quot;
+                            ) : (
+                              historyItems.length > 6 && (
+                                <div className="text-[11px] text-zinc-400 font-medium py-1">
+                                  ✓ Has llegado al final de tu historial ({historyTotal} citas)
                                 </div>
-                              ) : (
-                                <div className="mt-1 text-[11px] text-zinc-500 italic">
-                                  Cancelada a solicitud del cliente.
-                                </div>
-                              )}
-
-                              <div className="mt-2.5 pt-2 border-t border-zinc-200/80 flex justify-end">
-                                <button
-                                  onClick={() => {
-                                    if (apt.service) {
-                                      setSelectedService(apt.service);
-                                      setStep(2);
-                                    } else {
-                                      setStep(1);
-                                    }
-                                    setActiveTab("book");
-                                  }}
-                                  className="px-3 py-1 rounded-full bg-[#1F1F23] text-white font-bold text-[11px] hover:bg-black transition-all flex items-center gap-1.5"
-                                >
-                                  <Calendar className="w-3 h-3" />
-                                  <span>Volver a agendar</span>
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
+                              )
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
