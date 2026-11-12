@@ -36,6 +36,9 @@ import {
   timeToMinutes,
   minutesToTime,
   ShiftItem,
+  getDayScheduleStatus,
+  getSuggestedOverrideTime,
+  validateScheduleOverride,
 } from "@/lib/validation/acceptance-criteria";
 
 interface AdminAppProps {
@@ -57,6 +60,14 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
   // Role-based access control: ADMIN (Owner) vs PROVIDER (Staff/Doctor)
   const isProviderOnly = currentUser?.role === "PROVIDER";
   const isOwnerAdmin = !isProviderOnly;
+
+  const resolveOverrideTargets = (targetId: string) => {
+    if (targetId === "ALL") {
+      return staffList.filter((s: any) => s.isActive !== false);
+    }
+    const found = staffList.find((s: any) => s.id === targetId);
+    return found ? [found] : [];
+  };
 
   // Selected date and staff for Agenda tab
   const [agendaDateStr, setAgendaDateStr] = useState<string>(
@@ -1257,89 +1268,171 @@ Al ingresar con tu correo de Google podrás:
       {activeTab === "agenda" && (
         <div className="p-4 space-y-4">
           {/* Quick Imprevistos Action Bar */}
-          <div className="p-3 bg-zinc-100 rounded-[24px] border border-zinc-200">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                Acciones Rápidas de Imprevisto
-              </span>
-              <span className="text-[10px] text-zinc-400">1-Toque</span>
-            </div>
+          {(() => {
+            const now = new Date();
+            const agendaStatus = getDayScheduleStatus({
+              dateStr: agendaDateStr,
+              targets: resolveOverrideTargets(selectedStaffId),
+              isAllTargets: selectedStaffId === "ALL",
+              now,
+            });
+            const isClosedDay = agendaStatus.isDayClosedAlready;
+            const closedTag = agendaStatus.isPastDate
+              ? "Fecha pasada"
+              : !agendaStatus.hasShiftsOnDay
+              ? "Sin atención"
+              : `Cerró ${agendaStatus.latestEndStr}`;
+            const openDoctorsToday = isOwnerAdmin
+              ? staffList.filter(
+                  (st: any) =>
+                    st.id !== selectedStaffId &&
+                    !getDayScheduleStatus({
+                      dateStr: agendaDateStr,
+                      targets: [st],
+                      now,
+                    }).isDayClosedAlready
+                )
+              : [];
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <button
-                onClick={() =>
-                  setImprevistoModal({
-                    open: true,
-                    type: "LATE_START",
-                    timeStr: "09:30",
-                    reason: `Llegaré más tarde (${agendaDateStr})`,
-                    staffId: selectedStaffId,
-                  })
-                }
-                className="p-2.5 rounded-2xl bg-white border border-zinc-300 text-zinc-800 text-left hover:border-zinc-800 transition-all shadow-sm"
-              >
-                <Sun className="w-4 h-4 text-amber-500 mb-1" />
-                <div className="text-xs font-bold leading-tight">Entro más tarde</div>
-                <div className="text-[10px] text-zinc-400">Hora de inicio</div>
-              </button>
-
-              <button
-                onClick={() =>
-                  setImprevistoModal({
-                    open: true,
-                    type: "EARLY_LEAVE",
-                    timeStr: "16:00",
-                    reason: `Cerrar temprano (${agendaDateStr})`,
-                    staffId: selectedStaffId,
-                  })
-                }
-                className="p-2.5 rounded-2xl bg-white border border-zinc-300 text-zinc-800 text-left hover:border-zinc-800 transition-all shadow-sm"
-              >
-                <Sunset className="w-4 h-4 text-orange-500 mb-1" />
-                <div className="text-xs font-bold leading-tight">Salgo antes</div>
-                <div className="text-[10px] text-zinc-400">Hora de cierre</div>
-              </button>
-
-              <button
-                onClick={() => {
-                  const isToday = agendaDateStr === formatLocalDateYYYYMMDD(new Date());
-                  setImprevistoModal({
-                    open: true,
-                    type: "FULL_DAY_OFF",
-                    timeStr: "00:00",
-                    reason: isToday ? "No atiendo hoy por descanso/imprevisto" : `Cerrado el ${agendaDateStr} por descanso/imprevisto`,
-                    staffId: selectedStaffId,
-                  });
-                }}
-                className="p-2.5 rounded-2xl bg-white border border-red-300 text-zinc-800 text-left hover:border-zinc-800 transition-all shadow-sm"
-              >
-                <Coffee className="w-4 h-4 text-purple-600 mb-1" />
-                <div className="text-xs font-bold leading-tight">Cerrar día</div>
-                <div className="text-[10px] text-red-600 font-semibold">
-                  {agendaDateStr === formatLocalDateYYYYMMDD(new Date()) ? "No atender hoy" : `Cerrar ${agendaDateStr}`}
+            return (
+              <div className="p-3 bg-zinc-100 rounded-[24px] border border-zinc-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                    Acciones Rápidas de Imprevisto
+                  </span>
+                  <span className="text-[10px] text-zinc-400">
+                    {isClosedDay ? closedTag : "1-Toque"}
+                  </span>
                 </div>
-              </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setVacationModal({
-                    open: true,
-                    staffId: selectedStaffId === "ALL" ? (staffList[0]?.id || "") : selectedStaffId,
-                    startDate: agendaDateStr,
-                    endDate: "",
-                    reason: "Vacaciones programadas",
-                  })
-                }
-                className="p-2.5 rounded-2xl bg-white border border-amber-300 text-zinc-800 text-left hover:border-zinc-800 transition-all shadow-sm"
-              >
-                <div className="text-sm leading-none mb-1">🏖️</div>
-                <div className="text-xs font-bold leading-tight">Vacaciones</div>
-                <div className="text-[10px] text-amber-700 font-semibold">Rango de fechas</div>
-              </button>
-            </div>
-          </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    disabled={isClosedDay}
+                    title={isClosedDay ? agendaStatus.reason : undefined}
+                    onClick={() =>
+                      setImprevistoModal({
+                        open: true,
+                        type: "LATE_START",
+                        timeStr: getSuggestedOverrideTime("LATE_START", agendaStatus, now),
+                        reason: `Llegaré más tarde (${agendaDateStr})`,
+                        staffId: selectedStaffId,
+                      })
+                    }
+                    className={`p-2.5 rounded-2xl border text-left transition-all ${
+                      isClosedDay
+                        ? "bg-zinc-50 border-zinc-200 text-zinc-400 opacity-60 cursor-not-allowed"
+                        : "bg-white border-zinc-300 text-zinc-800 hover:border-zinc-800 shadow-sm"
+                    }`}
+                  >
+                    <Sun className={`w-4 h-4 mb-1 ${isClosedDay ? "text-zinc-400" : "text-amber-500"}`} />
+                    <div className="text-xs font-bold leading-tight">Entro más tarde</div>
+                    <div className="text-[10px] text-zinc-400">
+                      {isClosedDay ? closedTag : "Hora de inicio"}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isClosedDay}
+                    title={isClosedDay ? agendaStatus.reason : undefined}
+                    onClick={() =>
+                      setImprevistoModal({
+                        open: true,
+                        type: "EARLY_LEAVE",
+                        timeStr: getSuggestedOverrideTime("EARLY_LEAVE", agendaStatus, now),
+                        reason: `Cerrar temprano (${agendaDateStr})`,
+                        staffId: selectedStaffId,
+                      })
+                    }
+                    className={`p-2.5 rounded-2xl border text-left transition-all ${
+                      isClosedDay
+                        ? "bg-zinc-50 border-zinc-200 text-zinc-400 opacity-60 cursor-not-allowed"
+                        : "bg-white border-zinc-300 text-zinc-800 hover:border-zinc-800 shadow-sm"
+                    }`}
+                  >
+                    <Sunset className={`w-4 h-4 mb-1 ${isClosedDay ? "text-zinc-400" : "text-orange-500"}`} />
+                    <div className="text-xs font-bold leading-tight">Salgo antes</div>
+                    <div className="text-[10px] text-zinc-400">
+                      {isClosedDay ? closedTag : "Hora de cierre"}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isClosedDay}
+                    title={isClosedDay ? agendaStatus.reason : undefined}
+                    onClick={() => {
+                      const isToday = agendaDateStr === formatLocalDateYYYYMMDD(new Date());
+                      setImprevistoModal({
+                        open: true,
+                        type: "FULL_DAY_OFF",
+                        timeStr: "00:00",
+                        reason: isToday ? "No atiendo hoy por descanso/imprevisto" : `Cerrado el ${agendaDateStr} por descanso/imprevisto`,
+                        staffId: selectedStaffId,
+                      });
+                    }}
+                    className={`p-2.5 rounded-2xl border text-left transition-all ${
+                      isClosedDay
+                        ? "bg-zinc-50 border-zinc-200 text-zinc-400 opacity-60 cursor-not-allowed"
+                        : "bg-white border-red-300 text-zinc-800 hover:border-zinc-800 shadow-sm"
+                    }`}
+                  >
+                    <Coffee className={`w-4 h-4 mb-1 ${isClosedDay ? "text-zinc-400" : "text-purple-600"}`} />
+                    <div className="text-xs font-bold leading-tight">Cerrar día</div>
+                    <div className={`text-[10px] font-semibold ${isClosedDay ? "text-zinc-400" : "text-red-600"}`}>
+                      {isClosedDay
+                        ? closedTag
+                        : agendaDateStr === formatLocalDateYYYYMMDD(new Date())
+                        ? "No atender hoy"
+                        : `Cerrar ${agendaDateStr}`}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVacationModal({
+                        open: true,
+                        staffId: selectedStaffId === "ALL" ? (staffList[0]?.id || "") : selectedStaffId,
+                        startDate: agendaStatus.isPastDate
+                          ? formatLocalDateYYYYMMDD(now)
+                          : agendaDateStr,
+                        endDate: "",
+                        reason: "Vacaciones programadas",
+                      })
+                    }
+                    className="p-2.5 rounded-2xl bg-white border border-amber-300 text-zinc-800 text-left hover:border-zinc-800 transition-all shadow-sm"
+                  >
+                    <div className="text-sm leading-none mb-1">🏖️</div>
+                    <div className="text-xs font-bold leading-tight">Vacaciones</div>
+                    <div className="text-[10px] text-amber-700 font-semibold">Rango de fechas</div>
+                  </button>
+                </div>
+
+                {isClosedDay && (
+                  <div className="p-2.5 rounded-2xl bg-white/80 border border-zinc-200 text-[11px] text-zinc-600 flex items-center justify-between gap-2 flex-wrap">
+                    <span>🔒 {agendaStatus.reason}</span>
+                    {openDoctorsToday.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {openDoctorsToday.map((st: any) => (
+                          <button
+                            key={st.id}
+                            type="button"
+                            onClick={() => setSelectedStaffId(st.id)}
+                            className="px-2.5 py-0.5 rounded-full bg-[#1F1F23] text-white text-[10px] font-bold hover:bg-black transition-all"
+                          >
+                            Ver {st.displayName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Date Picker Bar */}
           <div className="space-y-2 pt-1">
@@ -3546,7 +3639,27 @@ Al ingresar con tu correo de Google podrás:
 
       {/* QUICK IMPREVISTO MODAL */}
       {imprevistoModal.open && (() => {
+        const now = new Date();
         const activeModalStaffId = imprevistoModal.staffId || selectedStaffId;
+        const modalValidation = validateScheduleOverride({
+          type: imprevistoModal.type,
+          dateStr: agendaDateStr,
+          timeStr: imprevistoModal.timeStr,
+          targets: resolveOverrideTargets(activeModalStaffId),
+          isAllTargets: activeModalStaffId === "ALL",
+          now,
+        });
+        const openModalAlternatives = isOwnerAdmin
+          ? staffList.filter(
+              (st: any) =>
+                st.id !== activeModalStaffId &&
+                !getDayScheduleStatus({
+                  dateStr: agendaDateStr,
+                  targets: [st],
+                  now,
+                }).isDayClosedAlready
+            )
+          : [];
         const activeDateAptsAllStaff = allAppointments.filter((a: any) => {
           const aStr = formatLocalDateYYYYMMDD(new Date(a.startAt));
           return (
@@ -3575,6 +3688,46 @@ Al ingresar con tu correo de Google podrás:
               </p>
 
               <div className="mt-4 space-y-3">
+                {!modalValidation.valid && (
+                  <div className="p-3 rounded-2xl bg-red-50 border border-red-300 text-xs text-red-900 space-y-2">
+                    <div className="font-bold flex items-center gap-1.5 text-red-800">
+                      <span>🔒 Bloqueo no disponible</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed">{modalValidation.error}</p>
+                    {openModalAlternatives.length > 0 && modalValidation.status.isDayClosedAlready && (
+                      <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                        {openModalAlternatives.map((st: any) => {
+                          const altStatus = getDayScheduleStatus({
+                            dateStr: agendaDateStr,
+                            targets: [st],
+                            now,
+                          });
+                          return (
+                            <button
+                              key={st.id}
+                              type="button"
+                              onClick={() =>
+                                setImprevistoModal({
+                                  ...imprevistoModal,
+                                  staffId: st.id,
+                                  timeStr: getSuggestedOverrideTime(
+                                    imprevistoModal.type,
+                                    altStatus,
+                                    now
+                                  ),
+                                })
+                              }
+                              className="px-2.5 py-1 rounded-full bg-[#1F1F23] text-white text-[10px] font-bold hover:bg-black"
+                            >
+                              Cambiar a {st.displayName} (hasta {altStatus.latestEndStr})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {isOwnerAdmin && staffList.length > 1 && (
                   <div>
                     <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
@@ -3582,12 +3735,24 @@ Al ingresar con tu correo de Google podrás:
                     </label>
                     <select
                       value={activeModalStaffId}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const nextStaffId = e.target.value;
+                        const nextStatus = getDayScheduleStatus({
+                          dateStr: agendaDateStr,
+                          targets: resolveOverrideTargets(nextStaffId),
+                          isAllTargets: nextStaffId === "ALL",
+                          now,
+                        });
                         setImprevistoModal({
                           ...imprevistoModal,
-                          staffId: e.target.value,
-                        })
-                      }
+                          staffId: nextStaffId,
+                          timeStr: getSuggestedOverrideTime(
+                            imprevistoModal.type,
+                            nextStatus,
+                            now
+                          ),
+                        });
+                      }}
                       className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-xs bg-white focus:outline-none cursor-pointer"
                     >
                       {staffList.map((st: any) => {
@@ -3608,6 +3773,7 @@ Al ingresar con tu correo de Google podrás:
                 )}
 
                 {isOwnerAdmin &&
+                  modalValidation.valid &&
                   modalTargetApts.length === 0 &&
                   otherStaffWithApts.length > 0 && (
                     <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-300 text-[11px] text-amber-950 space-y-2">
@@ -3670,6 +3836,7 @@ Al ingresar con tu correo de Google podrás:
                     </label>
                     <input
                       type="time"
+                      disabled={modalValidation.status.isDayClosedAlready}
                       value={imprevistoModal.timeStr}
                       onChange={(e) =>
                         setImprevistoModal({
@@ -3677,8 +3844,13 @@ Al ingresar con tu correo de Google podrás:
                           timeStr: e.target.value,
                         })
                       }
-                      className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-sm"
+                      className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-sm disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
                     />
+                    {modalValidation.status.hasShiftsOnDay && !modalValidation.status.isDayClosedAlready && (
+                      <span className="text-[10px] text-zinc-400 block mt-1">
+                        Horario regular de esta fecha: {modalValidation.status.earliestStartStr} - {modalValidation.status.latestEndStr}
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -3688,6 +3860,7 @@ Al ingresar con tu correo de Google podrás:
                   </label>
                   <input
                     type="text"
+                    disabled={modalValidation.status.isDayClosedAlready}
                     value={imprevistoModal.reason}
                     onChange={(e) =>
                       setImprevistoModal({
@@ -3696,7 +3869,7 @@ Al ingresar con tu correo de Google podrás:
                       })
                     }
                     placeholder="Ej. Cumpleaños / Trámite personal"
-                    className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-xs font-medium"
+                    className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-xs font-medium disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -3706,8 +3879,9 @@ Al ingresar con tu correo de Google podrás:
                   imprevistoModal.type !== "LATE_START" && (
                     <button
                       type="button"
+                      disabled={!modalValidation.valid}
                       onClick={() => handleQuickImprevisto("CANCEL_ALL")}
-                      className="w-full py-3 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition-all"
+                      className="w-full py-3 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       ⛔ Cerrar día, cancelar {modalTargetApts.length} cita(s) y notificar
                     </button>
@@ -3715,12 +3889,15 @@ Al ingresar con tu correo de Google podrás:
 
                 <div className="flex gap-2">
                   <button
+                    type="button"
+                    disabled={!modalValidation.valid}
                     onClick={() => handleQuickImprevisto()}
-                    className="flex-1 py-3 rounded-full bg-[#1F1F23] text-white text-xs font-semibold hover:bg-black"
+                    className="flex-1 py-3 rounded-full bg-[#1F1F23] text-white text-xs font-semibold hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Aplicar Bloqueo
                   </button>
                   <button
+                    type="button"
                     onClick={() =>
                       setImprevistoModal({ ...imprevistoModal, open: false })
                     }

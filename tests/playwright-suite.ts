@@ -450,8 +450,59 @@ async function runBrowserTests() {
     await adminPage.waitForSelector("text=Acciones Rápidas de Imprevisto", { timeout: 8000 });
     await adminPage.waitForTimeout(400);
 
-    // Click 'Cerrar día'
+    // Click 'Cerrar día' (first verify closed/non-working schedule locks quick actions)
     const closeDayBtn = adminPage.locator("button", { hasText: "Cerrar día" });
+    const calendarStrip = adminPage.locator("div.pill-slider").filter({
+      has: adminPage.locator("button", { hasText: "HOY" }),
+    });
+    const pillButtons = calendarStrip.locator("button");
+    const pillCount = await pillButtons.count();
+
+    // Non-working weekday (Sunday / DOM) must always lock 'Cerrar día'
+    const sundayPill = calendarStrip.locator("button", { hasText: "DOM" }).first();
+    if ((await sundayPill.count()) > 0) {
+      await sundayPill.click();
+      await adminPage.waitForTimeout(250);
+      const sundayLocked = await closeDayBtn.isDisabled();
+      const sundayText = (await closeDayBtn.textContent()) || "";
+      assert(
+        sundayLocked && sundayText.includes("Sin atención"),
+        "TC-09 Guard: Non-working day (DOM) locks 'Cerrar día' with 'Sin atención'"
+      );
+    }
+
+    // Return to HOY and verify locked state if current shift already closed
+    await pillButtons.first().click();
+    await adminPage.waitForTimeout(250);
+
+    if (await closeDayBtn.isDisabled()) {
+      const lockedText = (await closeDayBtn.textContent()) || "";
+      assert(
+        lockedText.includes("Cerró") || lockedText.includes("Sin atención") || lockedText.includes("Fecha pasada"),
+        `TC-09 Guard: 'Cerrar día' today is cleanly disabled (${lockedText.trim()})`
+      );
+    }
+
+    // Find a clean open day pill without existing confirmed/rescheduled appointments (or fallback to first open day)
+    let foundCleanOpenDay = false;
+    let firstOpenIdx = -1;
+    for (let i = 0; i < pillCount; i++) {
+      await pillButtons.nth(i).click();
+      await adminPage.waitForTimeout(250);
+      if (!(await closeDayBtn.isDisabled())) {
+        if (firstOpenIdx === -1) firstOpenIdx = i;
+        const isEmptyDay = (await adminPage.locator("text=No hay citas").count()) > 0;
+        if (isEmptyDay) {
+          foundCleanOpenDay = true;
+          break;
+        }
+      }
+    }
+    if (!foundCleanOpenDay && firstOpenIdx !== -1) {
+      await pillButtons.nth(firstOpenIdx).click();
+      await adminPage.waitForTimeout(250);
+    }
+
     await closeDayBtn.click();
 
     // Await modal and enter reason

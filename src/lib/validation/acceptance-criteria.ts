@@ -1,4 +1,6 @@
 // src/lib/validation/acceptance-criteria.ts
+import { formatLocalDateYYYYMMDD } from "../date-utils";
+
 /**
  * BUSINESS ACCEPTANCE CRITERIA FOR SHIFTS & SCHEDULES
  * 
@@ -240,4 +242,276 @@ export function sanitizeAndSortShifts(shifts: ShiftItem[]): ShiftItem[] {
     const bMin = timeToMinutes(b.startTime);
     return aMin - bMin;
   });
+}
+
+export interface OverrideStaffTarget {
+  displayName: string;
+  isActive?: boolean;
+  workingShifts: ShiftItem[];
+}
+
+export interface DayScheduleStatus {
+  hasShiftsOnDay: boolean;
+  isPastDate: boolean;
+  isToday: boolean;
+  isDayClosedAlready: boolean;
+  earliestStartMin: number;
+  latestEndMin: number;
+  earliestStartStr: string;
+  latestEndStr: string;
+  reason?: string;
+}
+
+const WEEKDAY_NAMES_PLURAL = [
+  "domingos",
+  "lunes",
+  "martes",
+  "miércoles",
+  "jueves",
+  "viernes",
+  "sábados",
+];
+
+/**
+ * Evaluates whether a target doctor (or the entire clinic) still has open working
+ * hours remaining on `dateStr` relative to `now`.
+ */
+export function getDayScheduleStatus(params: {
+  dateStr: string;
+  targets: OverrideStaffTarget[];
+  isAllTargets?: boolean;
+  now?: Date;
+}): DayScheduleStatus {
+  const { dateStr, targets, isAllTargets = false } = params;
+  const now = params.now ?? new Date();
+  const todayStr = formatLocalDateYYYYMMDD(now);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return {
+      hasShiftsOnDay: false,
+      isPastDate: false,
+      isToday: false,
+      isDayClosedAlready: true,
+      earliestStartMin: -1,
+      latestEndMin: -1,
+      earliestStartStr: "",
+      latestEndStr: "",
+      reason: "Formato de fecha inválido.",
+    };
+  }
+
+  const isToday = dateStr === todayStr;
+  const isPastDate = dateStr < todayStr;
+  if (isPastDate) {
+    return {
+      hasShiftsOnDay: false,
+      isPastDate: true,
+      isToday: false,
+      isDayClosedAlready: true,
+      earliestStartMin: -1,
+      latestEndMin: -1,
+      earliestStartStr: "",
+      latestEndStr: "",
+      reason: `La fecha seleccionada (${dateStr}) ya pasó. Selecciona hoy o un día futuro.`,
+    };
+  }
+
+  const dayOfWeek = new Date(`${dateStr}T00:00:00`).getDay();
+  const activeTargets = targets.filter((t) => t.isActive !== false);
+  const shiftsOnDay = activeTargets.flatMap((t) =>
+    (t.workingShifts || []).filter((s) => {
+      if (s.dayOfWeek !== dayOfWeek) return false;
+      const startMin = timeToMinutes(s.startTime);
+      const endMin = timeToMinutes(s.endTime);
+      return startMin !== -1 && endMin > startMin;
+    })
+  );
+
+  if (shiftsOnDay.length === 0) {
+    const dayLabel = WEEKDAY_NAMES_PLURAL[dayOfWeek] || "ese día";
+    const subject = isAllTargets
+      ? "Ningún profesional atiende"
+      : `${targets[0]?.displayName || "El profesional"} no atiende`;
+    return {
+      hasShiftsOnDay: false,
+      isPastDate: false,
+      isToday,
+      isDayClosedAlready: true,
+      earliestStartMin: -1,
+      latestEndMin: -1,
+      earliestStartStr: "",
+      latestEndStr: "",
+      reason: `${subject} los ${dayLabel} (${dateStr}). La agenda ya está cerrada ese día.`,
+    };
+  }
+
+  const startMins = shiftsOnDay.map((s) => timeToMinutes(s.startTime));
+  const endMins = shiftsOnDay.map((s) => timeToMinutes(s.endTime));
+  const earliestStartMin = Math.min(...startMins);
+  const latestEndMin = Math.max(...endMins);
+  const earliestStartStr = minutesToTime(earliestStartMin);
+  const latestEndStr = minutesToTime(latestEndMin);
+
+  if (isToday) {
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const nowStr = minutesToTime(nowMin);
+    if (nowMin >= latestEndMin) {
+      const subject = isAllTargets
+        ? "Todo el equipo ya cerró"
+        : `${targets[0]?.displayName || "El profesional"} ya cerró`;
+      return {
+        hasShiftsOnDay: true,
+        isPastDate: false,
+        isToday: true,
+        isDayClosedAlready: true,
+        earliestStartMin,
+        latestEndMin,
+        earliestStartStr,
+        latestEndStr,
+        reason: `${subject} su atención hoy (${earliestStartStr} - ${latestEndStr}) a las ${latestEndStr} (ahora son las ${nowStr}).`,
+      };
+    }
+  }
+
+  return {
+    hasShiftsOnDay: true,
+    isPastDate: false,
+    isToday,
+    isDayClosedAlready: false,
+    earliestStartMin,
+    latestEndMin,
+    earliestStartStr,
+    latestEndStr,
+  };
+}
+
+/**
+ * Returns a sensible default "HH:mm" cutoff time within an open schedule window.
+ */
+export function getSuggestedOverrideTime(
+  type: "LATE_START" | "EARLY_LEAVE" | "FULL_DAY_OFF",
+  status: DayScheduleStatus,
+  now: Date = new Date()
+): string {
+  if (type === "FULL_DAY_OFF") return "00:00";
+  if (!status.hasShiftsOnDay || status.isDayClosedAlready) {
+    return type === "LATE_START"
+      ? status.earliestStartStr || "09:30"
+      : status.latestEndStr || "16:00";
+  }
+
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const minValid = Math.max(
+    status.earliestStartMin + 15,
+    status.isToday ? Math.ceil((nowMin + 15) / 15) * 15 : 0
+  );
+  const maxValid = status.latestEndMin - 15;
+
+  if (type === "EARLY_LEAVE") {
+    const preferred = status.latestEndMin - 60;
+    const clamped = Math.max(minValid, Math.min(maxValid, preferred));
+    return minutesToTime(
+      Math.min(status.latestEndMin - 1, Math.max(status.earliestStartMin + 1, clamped))
+    );
+  }
+
+  // LATE_START
+  const preferred = Math.max(status.earliestStartMin + 60, minValid);
+  const clamped = Math.min(maxValid, preferred);
+  return minutesToTime(
+    Math.min(status.latestEndMin - 1, Math.max(status.earliestStartMin + 1, clamped))
+  );
+}
+
+/**
+ * Validates that a single-day schedule override (LATE_START, EARLY_LEAVE, FULL_DAY_OFF)
+ * targets an active future/remaining shift and obeys chronological bounds.
+ */
+export function validateScheduleOverride(params: {
+  type: "LATE_START" | "EARLY_LEAVE" | "FULL_DAY_OFF" | string;
+  dateStr: string;
+  timeStr?: string;
+  targets: OverrideStaffTarget[];
+  isAllTargets?: boolean;
+  now?: Date;
+}): { valid: boolean; error?: string; status: DayScheduleStatus } {
+  const now = params.now ?? new Date();
+  const status = getDayScheduleStatus({
+    dateStr: params.dateStr,
+    targets: params.targets,
+    isAllTargets: params.isAllTargets,
+    now,
+  });
+
+  if (status.isDayClosedAlready) {
+    return { valid: false, error: status.reason, status };
+  }
+
+  if (params.type === "FULL_DAY_OFF") {
+    return { valid: true, status };
+  }
+
+  const chosenMin = timeToMinutes(params.timeStr || "");
+  if (chosenMin === -1) {
+    return {
+      valid: false,
+      error: "Ingresa una hora válida en formato HH:mm.",
+      status,
+    };
+  }
+
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowStr = minutesToTime(nowMin);
+
+  if (params.type === "EARLY_LEAVE") {
+    if (status.isToday && chosenMin <= nowMin) {
+      return {
+        valid: false,
+        error: `La hora de cierre (${params.timeStr}) ya pasó (son las ${nowStr}). Selecciona una hora posterior.`,
+        status,
+      };
+    }
+    if (chosenMin >= status.latestEndMin) {
+      return {
+        valid: false,
+        error: `La hora de salida anticipada (${params.timeStr}) debe ser anterior al cierre normal (${status.latestEndStr}).`,
+        status,
+      };
+    }
+    if (chosenMin <= status.earliestStartMin) {
+      return {
+        valid: false,
+        error: `La hora de cierre (${params.timeStr}) es igual o anterior al inicio (${status.earliestStartStr}). Usa "Cerrar día completo".`,
+        status,
+      };
+    }
+    return { valid: true, status };
+  }
+
+  if (params.type === "LATE_START") {
+    if (status.isToday && chosenMin <= nowMin) {
+      return {
+        valid: false,
+        error: `La hora de llegada (${params.timeStr}) ya pasó (son las ${nowStr}).`,
+        status,
+      };
+    }
+    if (chosenMin >= status.latestEndMin) {
+      return {
+        valid: false,
+        error: `La hora de llegada (${params.timeStr}) es igual o posterior al cierre (${status.latestEndStr}). Usa "Cerrar día completo".`,
+        status,
+      };
+    }
+    if (chosenMin <= status.earliestStartMin) {
+      return {
+        valid: false,
+        error: `La atención ya inicia a las ${status.earliestStartStr}. Elige una hora posterior para entrar más tarde.`,
+        status,
+      };
+    }
+    return { valid: true, status };
+  }
+
+  return { valid: true, status };
 }

@@ -1,6 +1,7 @@
 // tests/e2e-full-system.test.ts
 import { prisma } from "../src/lib/prisma";
 import { formatLocalDateYYYYMMDD } from "../src/lib/date-utils";
+import { getDayScheduleStatus } from "../src/lib/validation/acceptance-criteria";
 
 const BASE_URL = "http://localhost:3000";
 
@@ -440,6 +441,111 @@ async function runE2E() {
         availReopened.json?.slots?.length > 0,
         `Following day reopening (${targetDateStr}), slots for ${drAlejandro.displayName} are restored (${availReopened.json?.slots?.length} open)`
       );
+    }
+
+    // 7e. Domain Guard: Reject overrides on past dates, non-working days, closing bounds, and closed shifts
+    const pastOverrideRes = await adminSession.request("/api/admin/day-override", {
+      method: "POST",
+      body: JSON.stringify({
+        staffId: drAlejandro.id,
+        type: "FULL_DAY_OFF",
+        startAt: new Date("2020-01-01T00:00:00").toISOString(),
+        endAt: new Date("2020-01-01T23:59:59").toISOString(),
+        reason: "Fecha pasada E2E",
+      }),
+    });
+    if (pastOverrideRes.json?.timeOff?.id) createdTimeOffIds.push(pastOverrideRes.json.timeOff.id);
+    assert(
+      pastOverrideRes.status === 400,
+      "Day-Override Guard: Past date FULL_DAY_OFF rejected with HTTP 400"
+    );
+
+    const alejandroShifts = await prisma.workingShift.findMany({
+      where: { staffId: drAlejandro.id },
+    });
+    const nonWorkingDate = (() => {
+      for (let d = 1; d <= 14; d++) {
+        const dt = new Date();
+        dt.setDate(dt.getDate() + d);
+        const ds = formatLocalDateYYYYMMDD(dt);
+        const st = getDayScheduleStatus({
+          dateStr: ds,
+          targets: [{ displayName: drAlejandro.displayName, isActive: true, workingShifts: alejandroShifts }],
+        });
+        if (!st.hasShiftsOnDay) return ds;
+      }
+      return null;
+    })();
+    if (nonWorkingDate) {
+      const nonWorkingRes = await adminSession.request("/api/admin/day-override", {
+        method: "POST",
+        body: JSON.stringify({
+          staffId: drAlejandro.id,
+          type: "FULL_DAY_OFF",
+          startAt: new Date(`${nonWorkingDate}T00:00:00`).toISOString(),
+          endAt: new Date(`${nonWorkingDate}T23:59:59`).toISOString(),
+          reason: "Domingo sin atención E2E",
+        }),
+      });
+      if (nonWorkingRes.json?.timeOff?.id) createdTimeOffIds.push(nonWorkingRes.json.timeOff.id);
+      assert(
+        nonWorkingRes.status === 400,
+        `Day-Override Guard: Non-working day (${nonWorkingDate}) rejected with HTTP 400`
+      );
+    }
+
+    const futureOpenStatus = getDayScheduleStatus({
+      dateStr: targetDateStr,
+      targets: [{ displayName: drAlejandro.displayName, isActive: true, workingShifts: alejandroShifts }],
+    });
+    if (futureOpenStatus.hasShiftsOnDay) {
+      const exactCloseRes = await adminSession.request("/api/admin/day-override", {
+        method: "POST",
+        body: JSON.stringify({
+          staffId: drAlejandro.id,
+          type: "EARLY_LEAVE",
+          startAt: new Date(`${targetDateStr}T${futureOpenStatus.latestEndStr}:00`).toISOString(),
+          endAt: new Date(`${targetDateStr}T23:59:59`).toISOString(),
+          reason: "Hora igual al cierre E2E",
+        }),
+      });
+      if (exactCloseRes.json?.timeOff?.id) createdTimeOffIds.push(exactCloseRes.json.timeOff.id);
+      assert(
+        exactCloseRes.status === 400,
+        `Day-Override Guard: EARLY_LEAVE at exact shift closing (${futureOpenStatus.latestEndStr} on ${targetDateStr}) rejected with HTTP 400`
+      );
+    }
+
+    const todayStr = formatLocalDateYYYYMMDD(new Date());
+    const allStaffWithShifts = await prisma.staffProfile.findMany({
+      where: { isActive: true },
+      include: { workingShifts: true },
+    });
+    const closedTodayStaff = allStaffWithShifts.find((st) => {
+      const status = getDayScheduleStatus({
+        dateStr: todayStr,
+        targets: [{ displayName: st.displayName, isActive: st.isActive, workingShifts: st.workingShifts }],
+      });
+      return status.hasShiftsOnDay && status.isDayClosedAlready;
+    });
+    if (closedTodayStaff) {
+      const closedTodayRes = await adminSession.request("/api/admin/day-override", {
+        method: "POST",
+        body: JSON.stringify({
+          staffId: closedTodayStaff.id,
+          type: "EARLY_LEAVE",
+          startAt: new Date(`${todayStr}T16:00:00`).toISOString(),
+          endAt: new Date(`${todayStr}T23:59:59`).toISOString(),
+          reason: "Intento tras hora de cierre E2E",
+        }),
+      });
+      if (closedTodayRes.json?.timeOff?.id) createdTimeOffIds.push(closedTodayRes.json.timeOff.id);
+      assert(
+        closedTodayRes.status === 400,
+        `Day-Override Guard: Already-closed shift today (${closedTodayStaff.displayName} on ${todayStr}) rejected with HTTP 400`
+      );
+    } else {
+      console.log(`  ℹ️ INFO: Skipping same-day already-closed check (all working shifts today on ${todayStr} are still open).`);
     }
 
     // 8. No-Show Flow & Automated Account Lock / Unlock (2-Strike System)

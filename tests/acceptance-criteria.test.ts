@@ -6,7 +6,11 @@ import {
   timeToMinutes,
   minutesToTime,
   sanitizeAndSortShifts,
+  getDayScheduleStatus,
+  getSuggestedOverrideTime,
+  validateScheduleOverride,
   ShiftItem,
+  OverrideStaffTarget,
 } from "../src/lib/validation/acceptance-criteria";
 import { computeAvailableSlotsForStaff } from "../src/lib/slot-engine";
 import { canCustomerCancelAppointment, findConflictingAppointments } from "../src/lib/booking-rules";
@@ -227,6 +231,114 @@ assert(
 assert(
   isProviderAllowedToBook("CUSTOMER"),
   "AC-ROLE-01: Accounts with CUSTOMER role permitted to use public booking flow"
+);
+
+// -------------------------------------------------------------------
+// 9. SCHEDULE OVERRIDE / CLOSED-SHIFT GUARDS
+// -------------------------------------------------------------------
+console.log("\n=== 9. SCHEDULE OVERRIDE / CLOSED-SHIFT GUARDS ===");
+
+const vegaTarget: OverrideStaffTarget = {
+  displayName: "Dr. Alejandro Vega",
+  isActive: true,
+  workingShifts: [
+    { dayOfWeek: 4, startTime: "09:00", endTime: "17:00" }, // Thursday
+    { dayOfWeek: 5, startTime: "09:00", endTime: "16:00" }, // Friday
+  ],
+};
+
+const pazTarget: OverrideStaffTarget = {
+  displayName: "Dr. Marcos Paz",
+  isActive: true,
+  workingShifts: [
+    { dayOfWeek: 4, startTime: "15:00", endTime: "22:00" }, // Thursday evening
+  ],
+};
+
+const thuEveningNow = new Date("2026-11-12T17:38:00");
+
+// 9.1 Past date rejection
+const resPast = validateScheduleOverride({
+  type: "FULL_DAY_OFF",
+  dateStr: "2020-01-01",
+  targets: [vegaTarget],
+  now: thuEveningNow,
+});
+assert(!resPast.valid && resPast.status.isPastDate, "Past date rejected for FULL_DAY_OFF");
+
+// 9.2 Non-working weekday rejection (Sunday has no shifts)
+const resSunday = validateScheduleOverride({
+  type: "FULL_DAY_OFF",
+  dateStr: "2026-11-15", // Sunday
+  targets: [vegaTarget],
+  now: thuEveningNow,
+});
+assert(!resSunday.valid && !resSunday.status.hasShiftsOnDay, "Non-working weekday (Sunday) rejected");
+
+// 9.3 Same-day already closed (17:38 when Vega's Thursday shift ended at 17:00)
+for (const type of ["EARLY_LEAVE", "LATE_START", "FULL_DAY_OFF"] as const) {
+  const resClosed = validateScheduleOverride({
+    type,
+    dateStr: "2026-11-12",
+    timeStr: "16:00",
+    targets: [vegaTarget],
+    now: thuEveningNow,
+  });
+  assert(
+    !resClosed.valid && resClosed.status.isDayClosedAlready,
+    `Same-day ${type} rejected when shift already closed (17:38 >= 17:00)`
+  );
+}
+
+// 9.4 EARLY_LEAVE at exact closing time (16:00 when Friday shift ends at 16:00) vs valid 15:00
+const resBoundaryEarly = validateScheduleOverride({
+  type: "EARLY_LEAVE",
+  dateStr: "2026-11-13",
+  timeStr: "16:00",
+  targets: [vegaTarget],
+  now: thuEveningNow,
+});
+assert(!resBoundaryEarly.valid, "EARLY_LEAVE at exact shift closing time (16:00) rejected");
+
+const resValidEarly = validateScheduleOverride({
+  type: "EARLY_LEAVE",
+  dateStr: "2026-11-13",
+  timeStr: "15:00",
+  targets: [vegaTarget],
+  now: thuEveningNow,
+});
+assert(resValidEarly.valid, "EARLY_LEAVE inside Friday shift bounds (15:00 < 16:00) accepted");
+
+// 9.5 Same-day open evening shift: past hour (16:00 < 17:38) rejected, future hour (20:00) accepted
+const resPastHour = validateScheduleOverride({
+  type: "EARLY_LEAVE",
+  dateStr: "2026-11-12",
+  timeStr: "16:00",
+  targets: [pazTarget],
+  now: thuEveningNow,
+});
+assert(!resPastHour.valid, "Same-day EARLY_LEAVE at past hour (16:00 when now=17:38) rejected");
+
+const resOpenEvening = validateScheduleOverride({
+  type: "EARLY_LEAVE",
+  dateStr: "2026-11-12",
+  timeStr: "20:00",
+  targets: [pazTarget],
+  now: thuEveningNow,
+});
+assert(resOpenEvening.valid, "Same-day EARLY_LEAVE at future hour inside open evening shift (20:00) accepted");
+
+// 9.6 Suggested override time respects remaining open window on same day
+const pazStatus = getDayScheduleStatus({
+  dateStr: "2026-11-12",
+  targets: [pazTarget],
+  now: thuEveningNow,
+});
+const suggestedEarly = getSuggestedOverrideTime("EARLY_LEAVE", pazStatus, thuEveningNow);
+assert(
+  timeToMinutes(suggestedEarly) > timeToMinutes("17:38") &&
+    timeToMinutes(suggestedEarly) < pazStatus.latestEndMin,
+  `Suggested EARLY_LEAVE (${suggestedEarly}) is after now (17:38) and before closing (22:00)`
 );
 
 // -------------------------------------------------------------------

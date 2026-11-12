@@ -2,6 +2,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
+import { formatLocalDateYYYYMMDD } from "@/lib/date-utils";
+import { formatTimeHHmm } from "@/lib/slot-engine";
+import { validateScheduleOverride } from "@/lib/validation/acceptance-criteria";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +27,13 @@ export async function POST(req: Request) {
     const startDate = new Date(startAt);
     const endDate = new Date(endAt);
 
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || endDate <= startDate) {
+      return NextResponse.json(
+        { error: "El rango horario del bloqueo es inválido." },
+        { status: 400 }
+      );
+    }
+
     if (user.role === "PROVIDER") {
       const ownStaff = await prisma.staffProfile.findFirst({
         where: { userId: user.id },
@@ -36,15 +46,52 @@ export async function POST(req: Request) {
       }
     }
 
-    let targetStaffIds: string[] = [];
-    if (staffId === "ALL") {
-      const allStaff = await prisma.staffProfile.findMany({
-        where: { isActive: true },
-        select: { id: true },
+    const targetStaffRecords = await prisma.staffProfile.findMany({
+      where: staffId === "ALL" ? { isActive: true } : { id: staffId },
+      include: { workingShifts: true },
+    });
+
+    if (targetStaffRecords.length === 0) {
+      return NextResponse.json(
+        { error: "No se encontraron profesionales activos para aplicar el bloqueo." },
+        { status: 404 }
+      );
+    }
+
+    const targetStaffIds = targetStaffRecords.map((s) => s.id);
+    const now = new Date();
+
+    // Enforce temporal invariants: disallow overrides on already-ended shifts, non-working days, or past dates
+    if (type === "VACATION") {
+      if (endDate <= now) {
+        return NextResponse.json(
+          { error: "No es posible programar vacaciones en fechas pasadas." },
+          { status: 400 }
+        );
+      }
+    } else if (type === "LATE_START" || type === "EARLY_LEAVE" || type === "FULL_DAY_OFF") {
+      const dateStr = formatLocalDateYYYYMMDD(startDate);
+      const timeStr =
+        type === "EARLY_LEAVE"
+          ? formatTimeHHmm(startDate)
+          : type === "LATE_START"
+          ? formatTimeHHmm(endDate)
+          : undefined;
+      const overrideValidation = validateScheduleOverride({
+        type,
+        dateStr,
+        timeStr,
+        targets: targetStaffRecords,
+        isAllTargets: staffId === "ALL",
+        now,
       });
-      targetStaffIds = allStaff.map((s) => s.id);
-    } else {
-      targetStaffIds = [staffId];
+
+      if (!overrideValidation.valid) {
+        return NextResponse.json(
+          { error: overrideValidation.error },
+          { status: 400 }
+        );
+      }
     }
 
     // 1. Detect conflicting appointments
