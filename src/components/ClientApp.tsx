@@ -36,6 +36,38 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
   const notifications = initialData?.notifications || [];
 
   const [dismissedNotifIds, setDismissedNotifIds] = useState<string[]>([]);
+  const [failedAvatarIds, setFailedAvatarIds] = useState<Record<string, boolean>>({});
+
+  const renderStaffAvatar = (st: any, textClass = "text-xs text-zinc-700") => {
+    const showImg = Boolean(st?.avatarUrl) && !failedAvatarIds[st.id];
+    const initials =
+      (st?.displayName || "")
+        .replace(/^(Dr\.|Dra\.|Lic\.|Ing\.)\s+/i, "")
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((w: string) => w[0]?.toUpperCase() || "")
+        .join("") || st?.displayName?.slice(0, 2).toUpperCase();
+
+    if (showImg) {
+      return (
+        <img
+          src={st.avatarUrl}
+          alt={st.displayName}
+          className="w-full h-full object-cover rounded-full"
+          onError={() =>
+            setFailedAvatarIds((prev) => (prev[st.id] ? prev : { ...prev, [st.id]: true }))
+          }
+        />
+      );
+    }
+
+    return (
+      <div className={`w-full h-full flex items-center justify-center font-bold ${textClass}`}>
+        {initials}
+      </div>
+    );
+  };
 
   const handleDismissNotification = async (notifId: string, aptId?: string) => {
     setDismissedNotifIds((prev) => [...prev, notifId, ...(aptId ? [aptId] : [])]);
@@ -889,10 +921,6 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
               isAssignedToSelectedService(st)
             );
 
-            const nonAssignedStaff = staffList.filter(
-              (st: any) => st.isActive !== false && !isAssignedToSelectedService(st)
-            );
-
             const availableStaff = eligibleStaff.filter(
               (st: any) => !isStaffOnVacationEntireWindow(st)
             );
@@ -923,7 +951,9 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       No hay {settings?.staffLabel?.toLowerCase() || "profesionales"} disponibles en este momento
                     </h3>
                     <p className="text-xs md:text-sm text-zinc-600 mt-2 max-w-md mx-auto leading-relaxed">
-                      Todo el personal médico se encuentra actualmente en periodo de vacaciones o descanso programado durante la ventana de reserva de los próximos {horizonDays} días.
+                      {eligibleStaff.length === 0
+                        ? "Actualmente no hay especialistas habilitados para realizar este servicio en la agenda en línea."
+                        : `Todo el personal habilitado para este servicio se encuentra en periodo de vacaciones o descanso programado durante los próximos ${horizonDays} días.`}
                     </p>
                     <div className="mt-3 p-3 rounded-2xl bg-white/80 border border-amber-200/60 max-w-md mx-auto text-xs text-amber-900 font-medium leading-relaxed">
                       💡 Para consultar cuándo se reanudan los turnos normales, coordinar una urgencia o solicitar un sobrecupo especial, por favor contacta directamente con el responsable o administración de la clínica.
@@ -963,16 +993,8 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                               key={st.id}
                               className="p-2.5 rounded-xl bg-white/90 border border-zinc-200/80 flex items-center gap-2.5 opacity-80"
                             >
-                              <div className="w-9 h-9 rounded-full bg-zinc-200 flex items-center justify-center font-bold text-xs text-zinc-600 flex-shrink-0">
-                                {st.avatarUrl ? (
-                                  <img
-                                    src={st.avatarUrl}
-                                    alt={st.displayName}
-                                    className="w-full h-full object-cover rounded-full"
-                                  />
-                                ) : (
-                                  st.displayName?.slice(0, 2).toUpperCase()
-                                )}
+                              <div className="w-9 h-9 rounded-full bg-zinc-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                {renderStaffAvatar(st, "text-xs text-zinc-600")}
                               </div>
                               <div className="text-xs truncate">
                                 <div className="font-bold text-zinc-800 truncate">{st.displayName}</div>
@@ -1032,17 +1054,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                         >
                           <div className="flex items-center gap-3">
                             <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-300 border-2 border-white flex-shrink-0">
-                              {st.avatarUrl ? (
-                                <img
-                                  src={st.avatarUrl}
-                                  alt={st.displayName}
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center font-bold text-xs text-zinc-700">
-                                  {st.displayName?.slice(0, 2).toUpperCase()}
-                                </div>
-                              )}
+                              {renderStaffAvatar(st, "text-xs text-zinc-700")}
                             </div>
                             <div>
                               <div className="font-bold text-sm text-[#1F1F23]">{st.displayName}</div>
@@ -1065,17 +1077,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                         >
                           <div className="flex items-center gap-3">
                             <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-200 border-2 border-zinc-300 flex-shrink-0 grayscale">
-                              {st.avatarUrl ? (
-                                <img
-                                  src={st.avatarUrl}
-                                  alt={st.displayName}
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center font-bold text-xs text-zinc-500">
-                                  {st.displayName?.slice(0, 2).toUpperCase()}
-                                </div>
-                              )}
+                              {renderStaffAvatar(st, "text-xs text-zinc-500")}
                             </div>
                             <div>
                               <div className="font-bold text-sm text-zinc-700 flex items-center gap-1.5">
@@ -1086,42 +1088,6 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                               </div>
                               <div className="text-xs text-zinc-500">
                                 Sin turnos en los próximos {horizonDays} días
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-
-                      {/* Non-assigned Staff cards (blocked because they don't perform this service) */}
-                      {nonAssignedStaff.map((st: any) => (
-                        <div
-                          key={st.id}
-                          className="w-full text-left bg-zinc-50/80 border border-dashed border-zinc-200 text-zinc-400 rounded-2xl md:rounded-full p-2.5 pr-4 flex items-center justify-between cursor-not-allowed opacity-70"
-                          title={`${st.displayName} no realiza ${selectedService?.name}`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-200 border-2 border-zinc-200 flex-shrink-0 grayscale">
-                              {st.avatarUrl ? (
-                                <img
-                                  src={st.avatarUrl}
-                                  alt={st.displayName}
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center font-bold text-xs text-zinc-500">
-                                  {st.displayName?.slice(0, 2).toUpperCase()}
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <div className="font-bold text-sm text-zinc-600 flex items-center gap-1.5 flex-wrap">
-                                <span>{st.displayName}</span>
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200 text-zinc-700">
-                                  No realiza este servicio
-                                </span>
-                              </div>
-                              <div className="text-xs text-zinc-400">
-                                {st.specialtyTitle}
                               </div>
                             </div>
                           </div>

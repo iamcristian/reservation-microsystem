@@ -47,7 +47,7 @@ export async function POST(req: Request) {
       const ip = getClientIp(req);
       const authRateKey = `book-auth-fail:${ip}:${cleanEmail}`;
 
-      const rateCheck = peekRateLimit(authRateKey, MAX_BOOK_AUTH_FAILS, BOOK_AUTH_WINDOW_MS);
+      const rateCheck = peekRateLimit(authRateKey, MAX_BOOK_AUTH_FAILS);
       if (!rateCheck.allowed) {
         return NextResponse.json(tooManyRequestsBody(rateCheck.retryAfterSec), {
           status: 429,

@@ -88,8 +88,25 @@ async function runBrowserTests() {
     // TC-02: Local Date Sync & Exclusion of Past Hours on "TODAY"
     // ========================================================================
     console.log("\n--- TC-02: Local Date Synchronization & Past Hour Exclusion ---");
+    // Verify Step 2 hides staff who do not perform a restricted service (e.g. Blanqueamiento)
+    const whiteningBtn = await page.$("button:has-text('Blanqueamiento')");
+    if (whiteningBtn) {
+      await whiteningBtn.click();
+      await page.waitForTimeout(300);
+      const hiddenNonAssigned = await page.$("text=Dr. Marcos Paz");
+      const hiddenBadge = await page.$("text=No realiza este servicio");
+      assert(
+        hiddenNonAssigned === null && hiddenBadge === null,
+        "Step 2: Non-assigned specialists (e.g. Dr. Marcos Paz on Blanqueamiento) are hidden instead of shown disabled"
+      );
+      const backToStep1 = await page.$("button[title='Regresar atrás']");
+      if (backToStep1) await backToStep1.click();
+      await page.waitForTimeout(300);
+    }
+
     // Select first service (e.g. Limpieza Dental)
-    await serviceButtons[0].click();
+    const firstSvcButtons = await page.$$("button:has-text('⏱️')");
+    await firstSvcButtons[0].click();
     await page.waitForTimeout(400);
 
     // Step 2: Select Dr. Alejandro Vega
@@ -129,11 +146,14 @@ async function runBrowserTests() {
     // TC-03: Saturday Schedule (09:00-13:00) vs Sunday Closed
     // ========================================================================
     console.log("\n--- TC-03: Saturday Schedule (09:00-13:00) vs Sunday Closed ---");
-    // Look for Saturday pill (or HOY if test runs on Saturday before 12:30, otherwise LUN)
+    // Look for Saturday pill (or HOY only if today is Saturday morning before 12:00, otherwise LUN if Sat afternoon)
+    const isSatMorning = today.getDay() === 6 && today.getHours() < 12;
     const isSatAfternoon = today.getDay() === 6 && today.getHours() >= 12;
     const satPills = isSatAfternoon
-      ? await page.$$("button:has-text('SÁB'), button:has-text('LUN')")
-      : await page.$$("button:has-text('SÁB'), button:has-text('HOY')");
+      ? await page.$$("button:has-text('LUN')")
+      : isSatMorning
+      ? await page.$$("button:has-text('HOY'), button:has-text('SÁB')")
+      : await page.$$("button:has-text('SÁB')");
     if (satPills.length > 0) {
       await satPills[0].click();
       await page.waitForTimeout(500);
