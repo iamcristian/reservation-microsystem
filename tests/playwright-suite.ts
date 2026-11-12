@@ -460,14 +460,16 @@ async function runBrowserTests() {
 
     // Non-working weekday (Sunday / DOM) must always lock 'Cerrar día'
     const sundayPill = calendarStrip.locator("button", { hasText: "DOM" }).first();
+    const dayScheduleBadge = adminPage.locator("[data-testid='agenda-day-schedule']");
     if ((await sundayPill.count()) > 0) {
       await sundayPill.click();
       await adminPage.waitForTimeout(250);
       const sundayLocked = await closeDayBtn.isDisabled();
       const sundayText = (await closeDayBtn.textContent()) || "";
+      const sundayScheduleText = (await dayScheduleBadge.textContent()) || "";
       assert(
-        sundayLocked && sundayText.includes("Sin atención"),
-        "TC-09 Guard: Non-working day (DOM) locks 'Cerrar día' with 'Sin atención'"
+        sundayLocked && sundayText.includes("Sin atención") && sundayScheduleText.includes("Sin atención"),
+        "TC-09 Guard: Non-working day (DOM) locks 'Cerrar día' and displays 'Sin atención' beside date"
       );
     }
 
@@ -502,6 +504,19 @@ async function runBrowserTests() {
       await pillButtons.nth(firstOpenIdx).click();
       await adminPage.waitForTimeout(250);
     }
+
+    // Verify daily schedule summary next to date and 1-click 'Modificar' jump to shift editor
+    const openScheduleText = (await dayScheduleBadge.textContent()) || "";
+    assert(
+      /\d{2}:\d{2}\s*-\s*\d{2}:\d{2}/.test(openScheduleText),
+      `TC-09 UX: Daily working hours visible next to date (${openScheduleText.trim()})`
+    );
+    await dayScheduleBadge.locator("button", { hasText: "Modificar" }).click();
+    await adminPage.waitForSelector("button:has-text('Guardar Cambios')", { timeout: 5000 });
+    assert(true, "TC-09 UX: 1-click 'Modificar' beside date opens Mis Horarios directly in edit mode");
+    await adminPage.locator("button", { hasText: "Cancelar" }).first().click();
+    await agendaTabBtn.click({ force: true });
+    await adminPage.waitForSelector("button:has-text('Cerrar día')", { timeout: 5000 });
 
     await closeDayBtn.click();
 

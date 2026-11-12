@@ -27,6 +27,7 @@ import {
   Save,
   Trash2,
   MapPin,
+  Pencil,
 } from "lucide-react";
 import BranchMap from "./BranchMap";
 import InteractiveMapPicker from "./InteractiveMapPicker";
@@ -135,14 +136,22 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
   const [editingHorizonDays, setEditingHorizonDays] = useState<number>(7);
   const [editingLeadTimeMin, setEditingLeadTimeMin] = useState<number>(30);
   const [savingShifts, setSavingShifts] = useState(false);
+  const [highlightedShiftDay, setHighlightedShiftDay] = useState<number | null>(null);
 
   // Strict real-time validation against Acceptance Criteria
   const shiftsValidation = useMemo(() => {
     return validateAllShifts(editingShiftsList, { maxShiftsPerDay: 3, minDurationMin: 30 });
   }, [editingShiftsList]);
 
-  const startEditingShifts = () => {
-    const currentShifts = selectedStaff?.workingShifts || [];
+  const openShiftsEditor = (targetStaffObj?: any, focusDayOfWeek?: number) => {
+    const staffToEdit = targetStaffObj || selectedStaff;
+    if (!staffToEdit) return;
+
+    if (staffToEdit.id && staffToEdit.id !== selectedStaffId) {
+      setSelectedStaffId(staffToEdit.id);
+    }
+
+    const currentShifts = staffToEdit.workingShifts || [];
     setEditingShiftsList(
       currentShifts.map((s: any) => ({
         tempId: s.id || "shift-" + Math.random().toString(36).substring(2, 9),
@@ -152,12 +161,29 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
       }))
     );
     setEditingHorizonDays(
-      selectedStaff?.customHorizonDays ?? settings?.bookingHorizonDays ?? 7
+      staffToEdit.customHorizonDays ?? settings?.bookingHorizonDays ?? 7
     );
     setEditingLeadTimeMin(
-      selectedStaff?.customLeadTimeMin ?? settings?.minLeadTimeMinutes ?? 30
+      staffToEdit.customLeadTimeMin ?? settings?.minLeadTimeMinutes ?? 30
     );
     setIsEditingShifts(true);
+    setActiveTab("shifts");
+
+    if (typeof focusDayOfWeek === "number") {
+      setHighlightedShiftDay(focusDayOfWeek);
+      setTimeout(() => {
+        document
+          .getElementById(`shift-day-${focusDayOfWeek}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 80);
+      setTimeout(() => {
+        setHighlightedShiftDay((prev) => (prev === focusDayOfWeek ? null : prev));
+      }, 2600);
+    }
+  };
+
+  const startEditingShifts = () => {
+    openShiftsEditor(selectedStaff);
   };
 
   const handleToggleDay = (day: number) => {
@@ -1436,8 +1462,8 @@ Al ingresar con tu correo de Google podrás:
 
           {/* Date Picker Bar */}
           <div className="space-y-2 pt-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Calendar className="w-4 h-4 text-zinc-500" />
                 <input
                   type="date"
@@ -1445,9 +1471,92 @@ Al ingresar con tu correo de Google podrás:
                   onChange={(e) => setAgendaDateStr(e.target.value)}
                   className="font-bold text-sm bg-zinc-100 px-3 py-1.5 rounded-xl border border-zinc-300 text-zinc-800 focus:outline-none"
                 />
+
+                {(() => {
+                  const now = new Date();
+                  const agendaDateObj = new Date(`${agendaDateStr}T00:00:00`);
+                  const dayOfWeek = agendaDateObj.getDay();
+                  const targets = resolveOverrideTargets(selectedStaffId);
+                  const isAll = selectedStaffId === "ALL";
+                  const dayStatus = getDayScheduleStatus({
+                    dateStr: agendaDateStr,
+                    targets,
+                    isAllTargets: isAll,
+                    now,
+                  });
+
+                  const focusedStaff = isAll
+                    ? staffList.find((s: any) => s.id === currentUser?.staffProfile?.id) ||
+                      targets.find((s: any) =>
+                        (s.workingShifts || []).some((sh: any) => sh.dayOfWeek === dayOfWeek)
+                      ) ||
+                      staffList[0]
+                    : targets[0] || selectedStaff;
+
+                  const dayShifts = !isAll && focusedStaff
+                    ? (focusedStaff.workingShifts || [])
+                        .filter((s: any) => s.dayOfWeek === dayOfWeek)
+                        .sort((a: any, b: any) => a.startTime.localeCompare(b.startTime))
+                    : [];
+
+                  const scheduleText = isAll
+                    ? dayStatus.hasShiftsOnDay
+                      ? `${dayStatus.earliestStartStr} - ${dayStatus.latestEndStr}`
+                      : "Sin atención"
+                    : dayShifts.length > 0
+                    ? dayShifts.map((s: any) => `${s.startTime} - ${s.endTime}`).join(" · ")
+                    : "Sin atención";
+
+                  const hasHours = isAll ? dayStatus.hasShiftsOnDay : dayShifts.length > 0;
+                  const showClosedTodayTag =
+                    dayStatus.isToday && dayStatus.hasShiftsOnDay && dayStatus.isDayClosedAlready;
+
+                  return (
+                    <div
+                      data-testid="agenda-day-schedule"
+                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs transition-all ${
+                        !hasHours
+                          ? "bg-zinc-50 border-zinc-200 text-zinc-500"
+                          : showClosedTodayTag
+                          ? "bg-amber-50 border-amber-200 text-amber-900"
+                          : "bg-emerald-50/70 border-emerald-200 text-emerald-950"
+                      }`}
+                    >
+                      <Clock
+                        className={`w-3.5 h-3.5 flex-shrink-0 ${
+                          !hasHours
+                            ? "text-zinc-400"
+                            : showClosedTodayTag
+                            ? "text-amber-600"
+                            : "text-emerald-700"
+                        }`}
+                      />
+                      <span className="font-semibold">
+                        {isAll ? "Equipo: " : "Atención: "}
+                        <span className="font-extrabold">{scheduleText}</span>
+                      </span>
+                      {showClosedTodayTag && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                          Ya cerró
+                        </span>
+                      )}
+                      {focusedStaff && (
+                        <button
+                          type="button"
+                          onClick={() => openShiftsEditor(focusedStaff, dayOfWeek)}
+                          className="ml-0.5 px-2 py-0.5 rounded-lg bg-white hover:bg-zinc-100 border border-zinc-300 text-[11px] font-bold text-[#1F1F23] inline-flex items-center gap-1 shadow-2xs transition-all"
+                          title={`Modificar horario de ${focusedStaff.displayName} para este día`}
+                        >
+                          <Pencil className="w-2.5 h-2.5" />
+                          <span>{hasHours ? "Modificar" : "Configurar"}</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
-              <span className="text-xs font-semibold text-zinc-500">
+              <span className="text-xs font-semibold text-zinc-500 capitalize">
                 {new Date(`${agendaDateStr}T00:00:00`).toLocaleDateString("es-ES", {
                   weekday: "long",
                 })}
@@ -2490,7 +2599,10 @@ Al ingresar con tu correo de Google podrás:
               return (
                 <div
                   key={d.day}
+                  id={`shift-day-${d.day}`}
                   className={`p-3.5 rounded-2xl border transition-all ${
+                    highlightedShiftDay === d.day ? "ring-2 ring-amber-400 " : ""
+                  }${
                     hasDayErrors
                       ? "bg-red-50/30 border-red-400 shadow-xs"
                       : isWorking
