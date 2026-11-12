@@ -21,6 +21,10 @@ import {
 } from "lucide-react";
 import BranchMap from "./BranchMap";
 import { formatLocalDateYYYYMMDD } from "@/lib/date-utils";
+import {
+  isUpcomingActiveAppointment,
+  isPastUntickedAppointment,
+} from "@/lib/booking-rules";
 
 interface ClientAppProps {
   initialData: any;
@@ -449,14 +453,17 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
     }
   };
 
-  const activeCount = userAppointments.filter(
-    (a: any) =>
-      (a.status === "CONFIRMED" || a.status === "RESCHEDULED_BY_STAFF") &&
-      new Date(a.startAt) >= new Date()
+  const nowSnapshot = new Date();
+  const maxActiveAllowed = settings?.maxActiveBookings ?? 2;
+
+  const activeCount = userAppointments.filter((a: any) =>
+    isUpcomingActiveAppointment(a, nowSnapshot)
   ).length;
 
   const rescheduledByStaff = userAppointments.find(
-    (a: any) => a.status === "RESCHEDULED_BY_STAFF"
+    (a: any) =>
+      a.status === "RESCHEDULED_BY_STAFF" &&
+      isUpcomingActiveAppointment(a, nowSnapshot)
   );
 
   const unreadCancelNotifs = notifications.filter(
@@ -612,7 +619,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     : "bg-zinc-800 text-white"
                 }`}
               >
-                {activeCount}/2
+                {activeCount}/{maxActiveAllowed}
               </span>
             </button>
           </div>
@@ -1625,9 +1632,12 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
       {activeTab === "my-appointments" && (
         <div className="px-5 md:px-8 pt-2 pb-8 space-y-5">
           {(() => {
-            const activeApts = userAppointments.filter(
-              (a: any) =>
-                a.status === "CONFIRMED" || a.status === "RESCHEDULED_BY_STAFF"
+            const listNow = new Date();
+            const activeApts = userAppointments.filter((a: any) =>
+              isUpcomingActiveAppointment(a, listNow)
+            );
+            const pastUntickedApts = userAppointments.filter((a: any) =>
+              isPastUntickedAppointment(a, listNow)
             );
             const activeNoShowApts = userAppointments.filter(
               (a: any) => a.status === "NO_SHOW"
@@ -1643,6 +1653,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
             );
             const historyTotal =
               completedApts.length +
+              pastUntickedApts.length +
               archivedNoShowApts.length +
               cancelledApts.length;
 
@@ -1652,7 +1663,9 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                   <h2 className="text-base font-bold text-[#1F1F23]">
                     Tus Reservas Activas ({activeApts.length})
                   </h2>
-                  <span className="text-xs text-zinc-400">Máx. 2 activas</span>
+                  <span className="text-xs text-zinc-400">
+                    Máx. {maxActiveAllowed} activas
+                  </span>
                 </div>
 
                 {!currentUser ? (
@@ -1697,7 +1710,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     {activeApts.length > 0 && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {activeApts.map((apt: any) => {
-                      const isPast = new Date(apt.startAt) < new Date();
+                      const isPast = new Date(apt.endAt || apt.startAt) <= listNow;
                       const isRescheduled =
                         apt.status === "RESCHEDULED_BY_STAFF";
 
@@ -1942,6 +1955,59 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                                 onClick={() => {
                                   setSelectedService(apt.service);
                                   setStep(2);
+                                  setActiveTab("book");
+                                }}
+                                className="px-3 py-1 rounded-full bg-[#1F1F23] text-white font-bold text-[11px] hover:bg-black transition-all"
+                              >
+                                📅 Repetir servicio
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+
+                        {pastUntickedApts.map((apt: any) => (
+                          <div
+                            key={apt.id}
+                            className="p-3.5 rounded-[22px] bg-zinc-50 border border-zinc-200 text-xs"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-zinc-900">
+                                {apt.service?.name}
+                              </span>
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-zinc-700 text-white">
+                                ⏱️ FINALIZADA
+                              </span>
+                            </div>
+                            <div className="mt-1.5 text-[11px] text-zinc-600 flex items-center gap-1.5 flex-wrap">
+                              <Calendar className="w-3.5 h-3.5 text-zinc-400" />
+                              <span>
+                                {new Date(apt.startAt).toLocaleDateString("es-ES", {
+                                  weekday: "short",
+                                  day: "numeric",
+                                  month: "short",
+                                })}{" "}
+                                •{" "}
+                                {new Date(apt.startAt).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                              {apt.staff?.displayName && (
+                                <span>• con {apt.staff.displayName}</span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-[11px] text-zinc-500">
+                              Horario pasado — archivada automáticamente sin ocupar tu límite activo.
+                            </div>
+                            <div className="mt-2 pt-2 border-t border-zinc-200/80 flex justify-end">
+                              <button
+                                onClick={() => {
+                                  if (apt.service) {
+                                    setSelectedService(apt.service);
+                                    setStep(2);
+                                  } else {
+                                    setStep(1);
+                                  }
                                   setActiveTab("book");
                                 }}
                                 className="px-3 py-1 rounded-full bg-[#1F1F23] text-white font-bold text-[11px] hover:bg-black transition-all"

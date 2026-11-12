@@ -9,6 +9,34 @@ export interface AppointmentCheckable {
   staffMoveReason?: string | null;
 }
 
+const ACTIVE_BOOKING_STATUSES = new Set(["CONFIRMED", "RESCHEDULED_BY_STAFF"]);
+
+export function isActiveBookingStatus(status: string): boolean {
+  return ACTIVE_BOOKING_STATUSES.has(status);
+}
+
+/**
+ * Active reservations only count from present/in-progress to the future (endAt > now),
+ * so past appointments never consume customer quota even if staff forgot to tick them.
+ */
+export function isUpcomingActiveAppointment(
+  appointment: Pick<AppointmentCheckable, "status" | "startAt" | "endAt">,
+  now = new Date()
+): boolean {
+  if (!isActiveBookingStatus(appointment.status)) return false;
+  const endMs = new Date(appointment.endAt || appointment.startAt).getTime();
+  return !Number.isNaN(endMs) && endMs > now.getTime();
+}
+
+export function isPastUntickedAppointment(
+  appointment: Pick<AppointmentCheckable, "status" | "startAt" | "endAt">,
+  now = new Date()
+): boolean {
+  if (!isActiveBookingStatus(appointment.status)) return false;
+  const endMs = new Date(appointment.endAt || appointment.startAt).getTime();
+  return !Number.isNaN(endMs) && endMs <= now.getTime();
+}
+
 export function canCustomerCancelAppointment(
   appointment: AppointmentCheckable,
   minCancelNoticeHours: number,
@@ -21,6 +49,12 @@ export function canCustomerCancelAppointment(
     return { allowed: false, reason: "La cita ya fue completada." };
   }
 
+  const nowMs = now.getTime();
+  const endMs = new Date(appointment.endAt || appointment.startAt).getTime();
+  if (!Number.isNaN(endMs) && endMs <= nowMs) {
+    return { allowed: false, reason: "Esta cita ya finalizó y pasó a tu historial." };
+  }
+
   // KEY EXCEPTION: If the specialist rescheduled the appointment due to an unforeseen event, customer can ALWAYS cancel for free
   if (appointment.allowFreeCancel || appointment.status === "RESCHEDULED_BY_STAFF") {
     return {
@@ -30,7 +64,6 @@ export function canCustomerCancelAppointment(
   }
 
   const startMs = new Date(appointment.startAt).getTime();
-  const nowMs = now.getTime();
   const hoursRemaining = (startMs - nowMs) / (1000 * 60 * 60);
 
   if (hoursRemaining < minCancelNoticeHours) {

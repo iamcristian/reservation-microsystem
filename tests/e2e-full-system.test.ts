@@ -266,7 +266,35 @@ async function runE2E() {
       `Double-booking guard: Rejects duplicate booking on ${targetDateStr} ${sharedSlot} with same doctor (HTTP 409)`
     );
 
-    // 5e. Booking #2 using "ANY" ("Any available staff") at the SAME time -> auto-assigns other specialist
+    // 5d-bis. Insert a past unticked CONFIRMED appointment (never marked COMPLETED/NO_SHOW by doctor)
+    // Verify it does NOT count against max 2 active future bookings and cannot be cancelled.
+    if (createdUserId) {
+      const pastStart = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const pastEnd = new Date(pastStart.getTime() + 30 * 60 * 1000);
+      const pastUnticked = await prisma.appointment.create({
+        data: {
+          customerId: createdUserId,
+          staffId: drAlejandro.id,
+          serviceId: firstService.id,
+          startAt: pastStart,
+          endAt: pastEnd,
+          status: "CONFIRMED",
+          priceSnapshot: firstService.price || 25,
+        },
+      });
+      createdAppointmentIds.push(pastUnticked.id);
+
+      const bootWithPast = await customerSession.request("/api/bootstrap");
+      const matchedPast = (bootWithPast.json?.userAppointments || []).find(
+        (a: any) => a.id === pastUnticked.id
+      );
+      assert(
+        Boolean(matchedPast) && matchedPast.canCancel === false,
+        "Past unticked appointment returns canCancel=false in /api/bootstrap"
+      );
+    }
+
+    // 5e. Booking #2 using "ANY" ("Any available staff") at the SAME time -> must STILL succeed (1 past unticked + 2 future = 2 active)
     const anyBook2 = await customerSession.request("/api/appointments", {
       method: "POST",
       body: JSON.stringify({

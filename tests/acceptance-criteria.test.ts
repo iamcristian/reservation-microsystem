@@ -13,7 +13,12 @@ import {
   OverrideStaffTarget,
 } from "../src/lib/validation/acceptance-criteria";
 import { computeAvailableSlotsForStaff } from "../src/lib/slot-engine";
-import { canCustomerCancelAppointment, findConflictingAppointments } from "../src/lib/booking-rules";
+import {
+  canCustomerCancelAppointment,
+  findConflictingAppointments,
+  isUpcomingActiveAppointment,
+  isPastUntickedAppointment,
+} from "../src/lib/booking-rules";
 
 let passedCount = 0;
 let failedCount = 0;
@@ -339,6 +344,63 @@ assert(
   timeToMinutes(suggestedEarly) > timeToMinutes("17:38") &&
     timeToMinutes(suggestedEarly) < pazStatus.latestEndMin,
   `Suggested EARLY_LEAVE (${suggestedEarly}) is after now (17:38) and before closing (22:00)`
+);
+
+// -------------------------------------------------------------------
+// 10. PRESENT-TO-FUTURE ACTIVE BOOKINGS vs PAST UNTICKED HISTORY
+// -------------------------------------------------------------------
+console.log("\n=== 10. ACTIVE BOOKING QUOTA (PRESENT/FUTURE ONLY) ===");
+
+const fixedNow = new Date("2026-11-12T17:45:00");
+const pastUntickedConfirmed = {
+  id: "past-1",
+  startAt: new Date("2026-11-09T10:00:00"),
+  endAt: new Date("2026-11-09T10:30:00"),
+  status: "CONFIRMED",
+  allowFreeCancel: false,
+};
+const pastUntickedRescheduled = {
+  id: "past-2",
+  startAt: new Date("2026-11-10T11:00:00"),
+  endAt: new Date("2026-11-10T11:30:00"),
+  status: "RESCHEDULED_BY_STAFF",
+  allowFreeCancel: true,
+};
+const ongoingPresentBooking = {
+  id: "present-1",
+  startAt: new Date("2026-11-12T17:30:00"),
+  endAt: new Date("2026-11-12T18:00:00"),
+  status: "CONFIRMED",
+  allowFreeCancel: false,
+};
+const completedPastBooking = {
+  id: "done-1",
+  startAt: new Date("2026-11-08T10:00:00"),
+  endAt: new Date("2026-11-08T10:30:00"),
+  status: "COMPLETED",
+  allowFreeCancel: false,
+};
+
+assert(
+  !isUpcomingActiveAppointment(pastUntickedConfirmed, fixedNow) &&
+    isPastUntickedAppointment(pastUntickedConfirmed, fixedNow),
+  "Past unticked CONFIRMED appointment does not count as active and goes to history"
+);
+assert(
+  !isUpcomingActiveAppointment(pastUntickedRescheduled, fixedNow) &&
+    isPastUntickedAppointment(pastUntickedRescheduled, fixedNow) &&
+    !canCustomerCancelAppointment(pastUntickedRescheduled, 6, fixedNow).allowed,
+  "Past unticked RESCHEDULED_BY_STAFF moves to history and cannot be cancelled retroactively"
+);
+assert(
+  isUpcomingActiveAppointment(ongoingPresentBooking, fixedNow) &&
+    !isPastUntickedAppointment(ongoingPresentBooking, fixedNow),
+  "In-progress appointment (startAt < now < endAt) stays counted as present/active"
+);
+assert(
+  !isUpcomingActiveAppointment(completedPastBooking, fixedNow) &&
+    !isPastUntickedAppointment(completedPastBooking, fixedNow),
+  "Explicit COMPLETED past appointment is not duplicated into unticked bucket"
 );
 
 // -------------------------------------------------------------------

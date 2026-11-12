@@ -560,11 +560,39 @@ async function runBrowserTests() {
     // TC-10: Customer Self-Cancellation & History Archive (BUG-05)
     // ========================================================================
     console.log("\n--- TC-10: Customer Cancellation & History Archive ---");
+    // Seed a past unticked CONFIRMED booking for this test customer to verify it moves to History automatically
+    const pwCustomer = await prisma.user.findUnique({
+      where: { email: testCustomerEmail },
+      include: { appointments: true },
+    });
+    if (pwCustomer && pwCustomer.appointments.length > 0) {
+      const refApt = pwCustomer.appointments[0];
+      const pastStart = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const pastEnd = new Date(pastStart.getTime() + 30 * 60 * 1000);
+      await prisma.appointment.create({
+        data: {
+          customerId: pwCustomer.id,
+          staffId: refApt.staffId,
+          serviceId: refApt.serviceId,
+          startAt: pastStart,
+          endAt: pastEnd,
+          status: "CONFIRMED",
+          priceSnapshot: refApt.priceSnapshot,
+        },
+      });
+    }
+
     await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
     await page.waitForSelector("button:has-text('Mis Citas')", { timeout: 10000 });
     await page.click("button:has-text('Mis Citas')");
-    await page.waitForSelector("text=Tus Reservas Activas", { timeout: 10000 });
+    await page.waitForSelector("text=Tus Reservas Activas (2)", { timeout: 10000 });
     await page.waitForTimeout(600);
+
+    const activeCounterMatch = await page.locator("button:has-text('Mis Citas'):has-text('2/2')").count();
+    assert(
+      activeCounterMatch > 0,
+      "TC-10 Quota: Past unticked CONFIRMED appointment excluded from Mis Citas (2/2) and Tus Reservas Activas (2)"
+    );
 
     // Cancel active appointment
     const cancelAptBtn = await page.waitForSelector(
@@ -589,7 +617,11 @@ async function runBrowserTests() {
       await historyAccordion.click();
       await page.waitForTimeout(400);
       const historyCard = await page.$("div:has-text('CANCELADA'), div:has-text('CONFIRMADA')");
-      assert(historyCard !== null, "TC-10: Archived appointment cards visible inside expandable drawer");
+      const pastUntickedCard = await page.$("text=FINALIZADA");
+      assert(
+        historyCard !== null && pastUntickedCard !== null,
+        "TC-10: Archived cancelled and past unticked ('FINALIZADA') cards visible inside history drawer"
+      );
     }
 
     // ========================================================================

@@ -167,12 +167,12 @@ export async function POST(req: Request) {
     const settings = await prisma.businessSettings.findFirst({ where: { id: 1 } });
     const maxActive = settings?.maxActiveBookings ?? 2;
 
-    // Check customer active bookings limit
+    // Check customer active bookings limit (present/ongoing to future only)
     const now = new Date();
     const activeBookingsCount = await prisma.appointment.count({
       where: {
         customerId: user.id,
-        startAt: { gte: now },
+        endAt: { gt: now },
         status: { in: ["CONFIRMED", "RESCHEDULED_BY_STAFF"] },
       },
     });
