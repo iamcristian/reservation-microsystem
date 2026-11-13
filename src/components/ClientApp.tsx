@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import Link from "next/link";
 import {
   Calendar,
   Clock,
   MapPin,
-  MessageCircle,
   Check,
   ChevronRight,
   ChevronLeft,
@@ -18,26 +18,82 @@ import {
   ShieldAlert,
   X,
   CalendarOff,
+  FileText,
 } from "lucide-react";
 import BranchMap from "./BranchMap";
+import { WhatsAppIcon } from "./WhatsAppIcon";
 import { formatLocalDateYYYYMMDD } from "@/lib/date-utils";
 import {
   isUpcomingActiveAppointment,
   isPastUntickedAppointment,
 } from "@/lib/booking-rules";
+import {
+  AvailabilityUnavailableReason,
+  PublicTimeOffNotice,
+  describeTimeOffBlock,
+  getStaffWindowTimeOffs,
+  isTimeOffOnDate,
+} from "@/lib/timeoff-utils";
 
 interface ClientAppProps {
   initialData: any;
   onRefresh: () => void;
 }
 
+const EMPTY_STATE_THEMES: Record<
+  string,
+  { box: string; title: string; divider: string; emoji?: string }
+> = {
+  VACATION: {
+    box: "bg-amber-50/80 border-amber-200 text-amber-950",
+    title: "text-amber-950",
+    divider: "border-amber-200/80",
+    emoji: "🏖️",
+  },
+  STAFF_PAUSED: {
+    box: "bg-amber-50/80 border-amber-200 text-amber-950",
+    title: "text-amber-950",
+    divider: "border-amber-200/80",
+    emoji: "🏖️",
+  },
+  FULL_DAY_OFF: {
+    box: "bg-rose-50/60 border-rose-200 text-rose-950",
+    title: "text-rose-950",
+    divider: "border-rose-200/80",
+    emoji: "⛔",
+  },
+  TIME_OFF_BLOCKED: {
+    box: "bg-amber-50/60 border-amber-200 text-zinc-800",
+    title: "text-zinc-900",
+    divider: "border-amber-200/80",
+    emoji: "⏳",
+  },
+};
+
+const DEFAULT_EMPTY_THEME: {
+  box: string;
+  title: string;
+  divider: string;
+  emoji?: string;
+} = {
+  box: "bg-zinc-50 border-zinc-200 text-zinc-600",
+  title: "text-zinc-800",
+  divider: "border-zinc-200",
+};
+
 export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
   const settings = initialData?.settings;
-  const services = initialData?.services || [];
-  const staffList = initialData?.staff || [];
+  const services = useMemo(() => initialData?.services || [], [initialData?.services]);
+  const staffList = useMemo(() => initialData?.staff || [], [initialData?.staff]);
   const currentUser = initialData?.currentUser;
   const userAppointments = initialData?.userAppointments || [];
   const notifications = initialData?.notifications || [];
+  const isHealthBusiness =
+    /(dental|odonto|medic|clinic|salud|doctor|pediatr|gineco|psicol|fisio)/i.test(
+      `${settings?.name || ""} ${settings?.tagline || ""} ${settings?.staffLabel || ""} ${services
+        .map((s: any) => s.name)
+        .join(" ")}`
+    );
 
   const [dismissedNotifIds, setDismissedNotifIds] = useState<string[]>([]);
   const [failedAvatarIds, setFailedAvatarIds] = useState<Record<string, boolean>>({});
@@ -118,6 +174,9 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
 
   // Slots loading
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [timeOffNotices, setTimeOffNotices] = useState<PublicTimeOffNotice[]>([]);
+  const [unavailableReason, setUnavailableReason] =
+    useState<AvailabilityUnavailableReason | null>(null);
   const [slotsLoading, setSlotsLoading] = useState<boolean>(false);
   const [bookingLoading, setBookingLoading] = useState<boolean>(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
@@ -300,6 +359,26 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
     }
   }, [currentUser]);
 
+  const applyAvailabilityPayload = useCallback(
+    (data: {
+      slots?: string[];
+      timeOffNotices?: PublicTimeOffNotice[];
+      unavailableReason?: AvailabilityUnavailableReason | null;
+    }) => {
+      const slots: string[] = data.slots || [];
+      setAvailableSlots(slots);
+      setTimeOffNotices(data.timeOffNotices || []);
+      setUnavailableReason(data.unavailableReason || null);
+      setSelectedTime((prevTime) => {
+        if (prevTime && slots.includes(prevTime)) {
+          return prevTime;
+        }
+        return slots.length > 0 ? slots[0] : "";
+      });
+    },
+    []
+  );
+
   // Fetch available slots when entering Step 3 or changing date/staff/service
   useEffect(() => {
     if (!selectedService?.id || !selectedDateStr) return;
@@ -319,14 +398,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
       })
       .then((data) => {
         if (!isMounted || !data) return;
-        const slots: string[] = data.slots || [];
-        setAvailableSlots(slots);
-        setSelectedTime((prevTime) => {
-          if (prevTime && slots.includes(prevTime)) {
-            return prevTime;
-          }
-          return slots.length > 0 ? slots[0] : "";
-        });
+        applyAvailabilityPayload(data);
       })
       .catch((err) => console.error("Error fetching availability:", err))
       .finally(() => {
@@ -336,7 +408,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
     return () => {
       isMounted = false;
     };
-  }, [step, selectedService?.id, selectedStaffId, selectedDateStr]);
+  }, [step, selectedService?.id, selectedStaffId, selectedDateStr, applyAvailabilityPayload]);
 
   // Real-time synchronization: Re-validate slots periodically or when returning to browser tab
   useEffect(() => {
@@ -350,14 +422,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (!data) return;
-          const slots: string[] = data.slots || [];
-          setAvailableSlots(slots);
-          setSelectedTime((prevTime) => {
-            if (prevTime && slots.includes(prevTime)) {
-              return prevTime;
-            }
-            return slots.length > 0 ? slots[0] : "";
-          });
+          applyAvailabilityPayload(data);
         })
         .catch(() => {});
     };
@@ -369,7 +434,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
       window.removeEventListener("focus", refreshSlots);
       clearInterval(interval);
     };
-  }, [step, selectedService?.id, selectedStaffId, selectedDateStr]);
+  }, [step, selectedService?.id, selectedStaffId, selectedDateStr, applyAvailabilityPayload]);
 
   // Real-time synchronization of appointments and cancellation notifications when switching tabs or polling
   useEffect(() => {
@@ -417,6 +482,48 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
       isToday: i === 0,
     });
   }
+
+  const getEligibleStaffForService = useCallback(
+    (svc: any) => {
+      const hasAnyServiceLinks =
+        (Array.isArray(svc?.staff) && svc.staff.length > 0) ||
+        staffList.some((st: any) => Array.isArray(st.services) && st.services.length > 0);
+      if (!svc?.id || !hasAnyServiceLinks) return staffList;
+      return staffList.filter(
+        (st: any) =>
+          svc.staff?.some((s: any) => s.staffId === st.id) ||
+          st.services?.some((s: any) => s.serviceId === svc.id)
+      );
+    },
+    [staffList]
+  );
+
+  const resetBookingWizardState = useCallback(
+    (
+      options: {
+        keepService?: boolean;
+        keepStaff?: boolean;
+        keepConfirmed?: boolean;
+      } = {}
+    ) => {
+      if (!options.keepService) {
+        setSelectedService(services[0] || null);
+      }
+      if (!options.keepStaff) {
+        setSelectedStaffId("ANY");
+      }
+      setSelectedDateStr(formatLocalDateYYYYMMDD(new Date()));
+      setSelectedTime("");
+      setTimeOffNotices([]);
+      setUnavailableReason(null);
+      setCustomerNotes("");
+      setBookingError(null);
+      if (!options.keepConfirmed) {
+        setConfirmedAppointment(null);
+      }
+    },
+    [services]
+  );
 
   const handleConfirmBooking = async () => {
     setBookingError(null);
@@ -486,6 +593,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
       }
 
       setConfirmedAppointment(data.appointment);
+      resetBookingWizardState({ keepConfirmed: true });
       setStep(5);
       onRefresh();
     } catch (e: any) {
@@ -600,6 +708,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
   const handleRepeatService = (apt: any) => {
     const latestService =
       services.find((s: any) => s.id === (apt.serviceId || apt.service?.id)) || apt.service;
+    resetBookingWizardState({ keepService: Boolean(latestService) });
     if (latestService) {
       setSelectedService(latestService);
       setStep(2);
@@ -708,11 +817,21 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
 
         {variant.note}
 
+        {apt.customerNotes && (
+          <div className="mt-2 p-2 rounded-xl bg-white/75 border border-zinc-200/80 text-[11px] text-zinc-700 flex items-start gap-1.5">
+            <FileText className="w-3.5 h-3.5 text-zinc-400 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <span className="font-bold text-zinc-600">Detalle: </span>
+              <span className="break-words">{apt.customerNotes}</span>
+            </div>
+          </div>
+        )}
+
         <div className={`mt-2.5 pt-2 border-t ${variant.borderClass} flex justify-end`}>
           <button
             type="button"
             onClick={() => handleRepeatService(apt)}
-            className="px-3 py-1 rounded-full bg-[#1F1F23] text-white font-bold text-[11px] hover:bg-black transition-all flex items-center gap-1.5"
+            className="w-full sm:w-auto min-h-[36px] px-4 py-1.5 rounded-full bg-[#1F1F23] text-white font-bold text-xs sm:text-[11px] hover:bg-black transition-all flex items-center justify-center gap-1.5"
           >
             <span>{variant.repeatLabel}</span>
           </button>
@@ -722,90 +841,120 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
   };
 
   return (
-    <div className="w-full max-w-md md:max-w-3xl lg:max-w-4xl xl:max-w-5xl mx-auto min-h-screen md:min-h-0 md:my-6 md:rounded-[32px] bg-white text-[#1F1F23] pb-16 md:pb-8 shadow-2xl relative border-x md:border border-zinc-200/80 flex flex-col transition-all duration-300">
+    <div className="w-full max-w-md md:max-w-3xl lg:max-w-4xl xl:max-w-5xl mx-auto min-h-dvh md:min-h-0 md:my-6 md:rounded-[32px] bg-white text-[#1F1F23] pb-16 md:pb-8 shadow-2xl relative border-x md:border border-zinc-200/80 flex flex-col transition-all duration-300">
       {/* 1. Business Header (Shown on Step 1 or in My Appointments) */}
       {(activeTab === "my-appointments" || step === 1) && (
-        <header className="px-5 pt-5 pb-3 md:px-8 md:pt-7 md:pb-5 bg-white border-b border-zinc-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 md:w-14 md:h-14 rounded-full overflow-hidden bg-zinc-200 flex-shrink-0 border border-zinc-300">
-                {settings?.logoUrl ? (
-                  <img
-                    src={settings.logoUrl}
-                    alt="Logo"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center font-bold text-zinc-600 md:text-lg">
-                    {settings?.name?.slice(0, 2).toUpperCase() || "RC"}
-                  </div>
-                )}
-              </div>
-              <div>
-                <h1 className="font-bold text-base md:text-xl leading-tight text-[#1F1F23]">
-                  {settings?.name || "Clínica & Reservas"}
-                </h1>
-                <p className="text-xs md:text-sm text-zinc-600">
-                  {settings?.addressText || "Av. Simón López esq. Av. Beijing, Cochabamba"}
-                </p>
-                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => setShowMapModal(true)}
-                    className="inline-flex items-center gap-1 text-[11px] md:text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-0.5 rounded-full transition-all border border-rose-200/80 shadow-2xs"
-                  >
-                    <MapPin className="w-3 h-3 text-rose-600" />
-                    <span>Ver mapa en la web</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowPwaModal(true)}
-                    className="inline-flex items-center gap-1 text-[11px] md:text-xs font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 px-2.5 py-0.5 rounded-full transition-all border border-zinc-300 shadow-2xs"
-                    title="Instalar como aplicación en tu celular"
-                  >
-                    <span>📲</span>
-                    <span>{pwaInstalled ? "App Instalada ✓" : "Instalar App"}</span>
-                  </button>
+        <header className="px-4 sm:px-5 pt-4 sm:pt-5 pb-3.5 md:px-8 md:pt-7 md:pb-5 bg-white border-b border-zinc-100">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            {/* Top row on mobile: Identity + primary right actions cleanly separated */}
+            <div className="flex items-start sm:items-center justify-between gap-2.5 flex-1 min-w-0">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="w-11 h-11 md:w-14 md:h-14 rounded-full overflow-hidden bg-zinc-200 flex-shrink-0 border border-zinc-300">
+                  {settings?.logoUrl ? (
+                    <img
+                      src={settings.logoUrl}
+                      alt="Logo"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center font-bold text-zinc-600 md:text-lg">
+                      {settings?.name?.slice(0, 2).toUpperCase() || "RC"}
+                    </div>
+                  )}
                 </div>
+                <div className="min-w-0 flex-1">
+                  <h1 className="font-bold text-base sm:text-lg md:text-xl leading-tight text-[#1F1F23] break-words">
+                    {settings?.name || "Clínica & Reservas"}
+                  </h1>
+                  <p className="hidden sm:block text-xs md:text-sm text-zinc-600 leading-snug mt-0.5">
+                    {settings?.addressText || "Av. Simón López esq. Av. Beijing, Cochabamba"}
+                  </p>
+                  <div className="hidden sm:flex mt-1.5 items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setShowMapModal(true)}
+                      className="inline-flex items-center gap-1 text-[11px] md:text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-full transition-all border border-rose-200/80 shadow-2xs whitespace-nowrap"
+                    >
+                      <MapPin className="w-3 h-3 text-rose-600 shrink-0" />
+                      <span>Ver mapa en la web</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowPwaModal(true)}
+                      className="inline-flex items-center gap-1 text-[11px] md:text-xs font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 px-2.5 py-1 rounded-full transition-all border border-zinc-300 shadow-2xs whitespace-nowrap"
+                      title="Instalar como aplicación en tu celular"
+                    >
+                      <span>📲</span>
+                      <span>{pwaInstalled ? "App Instalada ✓" : "Instalar App"}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action buttons: compact on top-right in mobile, inline on sm+ */}
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowAuthModal(true)}
+                  className={`h-9 sm:h-10 md:h-11 px-3 sm:px-3.5 md:px-4 rounded-full text-xs md:text-sm font-semibold flex items-center gap-1.5 transition-all shadow-sm whitespace-nowrap ${
+                    currentUser
+                      ? "bg-[#1F1F23] text-white hover:bg-black"
+                      : "bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300"
+                  }`}
+                  title={currentUser ? "Mi Cuenta" : "Iniciar Sesión"}
+                >
+                  <User className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                  <span className="max-w-[82px] sm:max-w-[110px] truncate">
+                    {currentUser ? currentUser.name?.split(" ")[0] : "Ingresar"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowMapModal(true)}
+                  className="hidden sm:flex w-10 h-10 md:w-11 md:h-11 rounded-full bg-[#1F1F23] text-white items-center justify-center hover:bg-black transition-all shadow-sm"
+                  title="Ver Ubicación en Mapa"
+                >
+                  <MapPin className="w-4 h-4 text-rose-400" />
+                </button>
+                {settings?.phoneWhatsapp && (
+                  <a
+                    href={`https://wa.me/${settings.phoneWhatsapp.replace(/\D/g, "")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-9 h-9 sm:w-10 sm:h-10 md:w-11 md:h-11 rounded-full bg-[#25D366] text-white flex items-center justify-center hover:bg-[#1EBE5D] transition-all shadow-sm shrink-0"
+                    title="Abrir WhatsApp"
+                  >
+                    <WhatsAppIcon className="w-5 h-5" />
+                  </a>
+                )}
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowAuthModal(true)}
-                className={`h-10 md:h-11 px-3.5 md:px-4 rounded-full text-xs md:text-sm font-semibold flex items-center gap-1.5 transition-all shadow-sm ${
-                  currentUser
-                    ? "bg-[#1F1F23] text-white hover:bg-black"
-                    : "bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300"
-                }`}
-                title={currentUser ? "Mi Cuenta" : "Iniciar Sesión"}
-              >
-                <User className="w-3.5 h-3.5 text-zinc-400" />
-                <span className="max-w-[100px] truncate">
-                  {currentUser ? currentUser.name?.split(" ")[0] : "Ingresar"}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowMapModal(true)}
-                className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-[#1F1F23] text-white flex items-center justify-center hover:bg-black transition-all shadow-sm"
-                title="Ver Ubicación en Mapa"
-              >
-                <MapPin className="w-4 h-4 text-rose-400" />
-              </button>
-              {settings?.phoneWhatsapp && (
-                <a
-                  href={`https://wa.me/${settings.phoneWhatsapp.replace(/\D/g, "")}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 transition-all shadow-sm"
-                  title="Abrir WhatsApp"
+            {/* Mobile-only full-width address + single-line utility pills (avoids cramping) */}
+            <div className="sm:hidden space-y-2">
+              <p className="text-xs text-zinc-600 leading-snug">
+                {settings?.addressText || "Av. Simón López esq. Av. Beijing, Cochabamba"}
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowMapModal(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 min-h-[34px] rounded-full transition-all border border-rose-200/80 shadow-2xs whitespace-nowrap"
                 >
-                  <MessageCircle className="w-4 h-4" />
-                </a>
-              )}
+                  <MapPin className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>Ver mapa en la web</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPwaModal(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-800 bg-zinc-100 hover:bg-zinc-200 px-3 py-1.5 min-h-[34px] rounded-full transition-all border border-zinc-300 shadow-2xs whitespace-nowrap"
+                  title="Instalar como aplicación en tu celular"
+                >
+                  <span>📲</span>
+                  <span>{pwaInstalled ? "App Instalada ✓" : "Instalar App"}</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -813,6 +962,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
           <div className="mt-4 md:mt-6 bg-zinc-200 p-1 rounded-full flex items-center border border-zinc-300/60 max-w-md mx-auto">
             <button
               onClick={() => {
+                resetBookingWizardState();
                 setActiveTab("book");
                 setStep(1);
               }}
@@ -945,6 +1095,10 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                         cancelledByStaff.id
                       );
                     }
+                    resetBookingWizardState({
+                      keepService: Boolean(targetCancelledApt?.service),
+                      keepStaff: Boolean(targetCancelledApt?.staff?.id),
+                    });
                     if (targetCancelledApt?.service) {
                       setSelectedService(targetCancelledApt.service);
                     }
@@ -998,7 +1152,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                 rel="noreferrer"
                 className="mt-2.5 inline-flex items-center gap-1.5 bg-white text-zinc-900 font-bold px-3.5 py-1.5 rounded-full shadow-sm text-xs"
               >
-                <MessageCircle className="w-3.5 h-3.5" />
+                <WhatsAppIcon className="w-4 h-4 text-[#16A34A]" />
                 <span>Contactar por WhatsApp</span>
               </a>
             )}
@@ -1013,7 +1167,12 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
           {step >= 2 && step <= 4 && (
             <div className="flex items-center justify-between pt-3 pb-5">
               <button
-                onClick={() => setStep((prev) => (prev - 1) as any)}
+                onClick={() => {
+                  if (step === 2) {
+                    resetBookingWizardState();
+                  }
+                  setStep((prev) => (prev - 1) as any);
+                }}
                 className="w-11 h-11 rounded-full bg-[#1F1F23] text-white flex items-center justify-center shadow-sm hover:bg-black active:scale-95 transition-all"
                 title="Regresar atrás"
               >
@@ -1068,17 +1227,18 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     <button
                       key={svc.id}
                       onClick={() => {
+                        resetBookingWizardState({ keepService: true });
                         setSelectedService(svc);
                         setStep(2);
                       }}
-                      className="w-full text-left bg-[#27272A] hover:bg-[#1F1F23] text-white rounded-2xl md:rounded-3xl p-3.5 pl-5 pr-3.5 md:p-5 flex items-center justify-between transition-all shadow-sm hover:shadow-md active:scale-[0.99] group border border-transparent hover:border-zinc-700"
+                      className="w-full text-left bg-[#27272A] hover:bg-[#1F1F23] text-white rounded-2xl md:rounded-3xl p-3.5 pl-4 sm:pl-5 pr-3.5 md:p-5 flex items-center justify-between gap-3 transition-all shadow-sm hover:shadow-md active:scale-[0.99] group border border-transparent hover:border-zinc-700"
                     >
-                      <div>
-                        <div className="font-bold text-sm md:text-base leading-tight text-white group-hover:text-emerald-300 transition-colors">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-sm md:text-base leading-tight text-white group-hover:text-emerald-300 transition-colors break-words">
                           {svc.name}
                         </div>
                         <div className="text-xs text-zinc-300 mt-1 flex items-center gap-2 flex-wrap">
-                          <span>⏱️ {svc.durationMin} min</span>
+                          <span className="whitespace-nowrap">⏱️ {svc.durationMin} min</span>
                           {doctorsForSvc.length === 1 ? (
                             <span className="text-[10px] bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 px-2 py-0.5 rounded-full font-semibold">
                               Especialidad de {doctorsForSvc[0].displayName}
@@ -1096,12 +1256,12 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-sm md:text-base text-white">
+                      <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+                        <span className="font-bold text-sm md:text-base text-white whitespace-nowrap">
                           {settings?.currencySymbol || "$"}
                           {svc.price.toFixed(2)}
                         </span>
-                        <div className="w-10 h-10 rounded-full bg-white text-[#1F1F23] flex items-center justify-center group-hover:bg-emerald-400 group-hover:text-black transition-all">
+                        <div className="w-10 h-10 rounded-full bg-white text-[#1F1F23] flex items-center justify-center group-hover:bg-emerald-400 group-hover:text-black transition-all shrink-0">
                           <ChevronRight className="w-4 h-4" />
                         </div>
                       </div>
@@ -1119,35 +1279,18 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
             const windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             const windowEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + horizonDays, 23, 59, 59);
 
-            // Check if staff has an ongoing time-off covering the whole booking window
             const isStaffOnVacationEntireWindow = (st: any) => {
               if (st.isActive === false) return true;
               if (Array.isArray(st.workingShifts) && st.workingShifts.length === 0) return true;
-              if (Array.isArray(st.timeOffs) && st.timeOffs.length > 0) {
-                return st.timeOffs.some((to: any) => {
-                  const s = new Date(to.startAt);
-                  const e = new Date(to.endAt);
-                  return s <= windowStart && e >= windowEnd;
-                });
-              }
-              return false;
-            };
-
-            const hasAnyServiceLinks =
-              (Array.isArray(selectedService?.staff) && selectedService.staff.length > 0) ||
-              staffList.some((st: any) => Array.isArray(st.services) && st.services.length > 0);
-
-            const isAssignedToSelectedService = (st: any) => {
-              if (!selectedService?.id || !hasAnyServiceLinks) return true;
-              return (
-                selectedService.staff?.some((s: any) => s.staffId === st.id) ||
-                st.services?.some((s: any) => s.serviceId === selectedService.id)
+              const { coveringWholeWindow } = getStaffWindowTimeOffs(
+                st.timeOffs || [],
+                windowStart,
+                windowEnd
               );
+              return Boolean(coveringWholeWindow);
             };
 
-            const eligibleStaff = staffList.filter((st: any) =>
-              isAssignedToSelectedService(st)
-            );
+            const eligibleStaff = getEligibleStaffForService(selectedService);
 
             const availableStaff = eligibleStaff.filter(
               (st: any) => !isStaffOnVacationEntireWindow(st)
@@ -1157,13 +1300,64 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
               (st: any) => isStaffOnVacationEntireWindow(st)
             );
 
+            const renderVacationStaffCard = (st: any, compact: boolean) => {
+              const { coveringWholeWindow } = getStaffWindowTimeOffs(
+                st.timeOffs || [],
+                windowStart,
+                windowEnd
+              );
+              const vacInfo = coveringWholeWindow
+                ? describeTimeOffBlock(coveringWholeWindow)
+                : null;
+              return (
+                <div
+                  key={st.id}
+                  className={
+                    compact
+                      ? "p-2.5 rounded-xl bg-white/90 border border-zinc-200/80 flex items-start gap-2.5 opacity-90"
+                      : "w-full text-left bg-zinc-50 border border-dashed border-zinc-300 text-zinc-500 rounded-2xl p-3 pr-4 flex items-center justify-between cursor-not-allowed opacity-85"
+                  }
+                >
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <div
+                      className={`${
+                        compact ? "w-9 h-9" : "w-12 h-12"
+                      } rounded-full overflow-hidden bg-zinc-200 border-2 border-zinc-300 flex-shrink-0 grayscale`}
+                    >
+                      {renderStaffAvatar(st, "text-xs text-zinc-600")}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm text-zinc-700 flex items-center gap-1.5 flex-wrap">
+                        <span className="truncate">{st.displayName}</span>
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                          {vacInfo?.badgeEmoji || "🏖️"} En vacaciones
+                        </span>
+                      </div>
+                      <div className="text-xs text-zinc-500 mt-0.5 leading-snug">
+                        {vacInfo
+                          ? vacInfo.periodLabel
+                          : st.isActive === false
+                          ? "Agenda pausada temporalmente"
+                          : `Sin turnos en los próximos ${horizonDays} días`}
+                      </div>
+                      {vacInfo?.note && (
+                        <div className="text-[11px] text-amber-900 bg-amber-50/90 border border-amber-200/80 rounded-lg px-2 py-1 mt-1 break-words">
+                          <span className="font-semibold">Motivo:</span> {vacInfo.note}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            };
+
             return (
               <div className="flex-1 flex flex-col">
-                <div className="mb-4 md:mb-6 flex items-center justify-between bg-zinc-100 rounded-2xl md:rounded-full px-4 py-2.5 md:px-5 md:py-3 text-xs md:text-sm">
-                  <span className="font-semibold text-zinc-700 truncate">
+                <div className="mb-4 md:mb-6 flex items-center justify-between flex-wrap gap-x-3 gap-y-1 bg-zinc-100 rounded-2xl md:rounded-full px-4 py-2.5 md:px-5 md:py-3 text-xs md:text-sm">
+                  <span className="font-semibold text-zinc-700 min-w-0 truncate">
                     {selectedService?.name}
                   </span>
-                  <span className="font-bold text-[#1F1F23]">
+                  <span className="font-bold text-[#1F1F23] whitespace-nowrap shrink-0">
                     {settings?.currencySymbol || "$"}
                     {selectedService?.price?.toFixed(2)} •{" "}
                     {selectedService?.durationMin} min
@@ -1197,13 +1391,16 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                           rel="noreferrer"
                           className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all"
                         >
-                          <MessageCircle className="w-4 h-4" />
+                          <WhatsAppIcon className="w-4 h-4" />
                           <span>Contactar al responsable por WhatsApp</span>
                         </a>
                       )}
                       <button
                         type="button"
-                        onClick={() => setStep(1)}
+                        onClick={() => {
+                          resetBookingWizardState();
+                          setStep(1);
+                        }}
                         className="w-full sm:w-auto px-4 py-2.5 rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 font-semibold text-xs transition-all"
                       >
                         ← Volver a Servicios
@@ -1216,23 +1413,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                           Equipo en periodo de receso / vacaciones:
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-lg mx-auto">
-                          {vacationStaff.map((st: any) => (
-                            <div
-                              key={st.id}
-                              className="p-2.5 rounded-xl bg-white/90 border border-zinc-200/80 flex items-center gap-2.5 opacity-80"
-                            >
-                              <div className="w-9 h-9 rounded-full bg-zinc-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                {renderStaffAvatar(st, "text-xs text-zinc-600")}
-                              </div>
-                              <div className="text-xs truncate">
-                                <div className="font-bold text-zinc-800 truncate">{st.displayName}</div>
-                                <div className="text-[10px] text-amber-700 font-semibold flex items-center gap-1">
-                                  <span>🏖️</span>
-                                  <span>En vacaciones (Sin turnos)</span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
+                          {vacationStaff.map((st: any) => renderVacationStaffCard(st, true))}
                         </div>
                       </div>
                     )}
@@ -1248,19 +1429,21 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       <button
                         onClick={() => {
                           setSelectedStaffId("ANY");
+                          setSelectedDateStr(formatLocalDateYYYYMMDD(new Date()));
+                          setSelectedTime("");
                           setStep(3);
                         }}
-                        className="w-full text-left bg-[#1F1F23] text-white rounded-2xl md:rounded-full p-3 pr-4 flex items-center justify-between shadow-sm hover:opacity-95 transition-all md:col-span-2 lg:col-span-3 hover:shadow-md"
+                        className="w-full text-left bg-[#1F1F23] text-white rounded-2xl md:rounded-full p-3 pr-4 flex items-center justify-between gap-3 shadow-sm hover:opacity-95 transition-all md:col-span-2 lg:col-span-3 hover:shadow-md"
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="w-12 h-12 rounded-full bg-white/15 text-white flex items-center justify-center flex-shrink-0">
                             <Sparkles className="w-5 h-5" />
                           </div>
-                          <div>
-                            <div className="font-bold text-sm md:text-base">
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm md:text-base leading-snug">
                               Cualquier {settings?.staffLabel || "Profesional"} disponible
                             </div>
-                            <div className="text-xs text-zinc-300">
+                            <div className="text-xs text-zinc-300 leading-snug">
                               Muestra la mayor cantidad de horarios libres
                             </div>
                           </div>
@@ -1271,56 +1454,59 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       </button>
 
                       {/* Available Staff cards */}
-                      {availableStaff.map((st: any) => (
-                        <button
-                          key={st.id}
-                          onClick={() => {
-                            setSelectedStaffId(st.id);
-                            setStep(3);
-                          }}
-                          className="w-full text-left bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-[#1F1F23] rounded-2xl md:rounded-full p-2.5 pr-4 flex items-center justify-between shadow-2xs transition-all hover:shadow-sm"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-300 border-2 border-white flex-shrink-0">
-                              {renderStaffAvatar(st, "text-xs text-zinc-700")}
-                            </div>
-                            <div>
-                              <div className="font-bold text-sm text-[#1F1F23]">{st.displayName}</div>
-                              <div className="text-xs text-zinc-600">
-                                {st.specialtyTitle}
+                      {availableStaff.map((st: any) => {
+                        const { upcomingVacations } = getStaffWindowTimeOffs(
+                          st.timeOffs || [],
+                          windowStart,
+                          windowEnd
+                        );
+                        const nextVacInfo = upcomingVacations[0]
+                          ? describeTimeOffBlock(upcomingVacations[0])
+                          : null;
+                        return (
+                          <button
+                            key={st.id}
+                            onClick={() => {
+                              setSelectedStaffId(st.id);
+                              setSelectedDateStr(formatLocalDateYYYYMMDD(new Date()));
+                              setSelectedTime("");
+                              setStep(3);
+                            }}
+                            className={`w-full text-left bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-[#1F1F23] rounded-2xl ${
+                              nextVacInfo ? "md:rounded-[28px]" : "md:rounded-full"
+                            } p-2.5 pr-4 flex items-center justify-between gap-3 shadow-2xs transition-all hover:shadow-sm`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-300 border-2 border-white flex-shrink-0">
+                                {renderStaffAvatar(st, "text-xs text-zinc-700")}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-bold text-sm text-[#1F1F23] break-words">
+                                  {st.displayName}
+                                </div>
+                                <div className="text-xs text-zinc-600 line-clamp-2">
+                                  {st.specialtyTitle}
+                                </div>
+                                {nextVacInfo && (
+                                  <div className="mt-1 inline-flex items-center gap-1 flex-wrap px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200/80 text-[10px] font-semibold text-amber-900 break-words">
+                                    <span>{nextVacInfo.badgeEmoji}</span>
+                                    <span>Vacaciones: {nextVacInfo.periodLabel}</span>
+                                    {nextVacInfo.note && (
+                                      <span className="text-amber-800">• {nextVacInfo.note}</span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
-                          </div>
-                          <div className="w-9 h-9 rounded-full bg-[#1F1F23] text-white flex items-center justify-center flex-shrink-0">
-                            <ChevronRight className="w-4 h-4" />
-                          </div>
-                        </button>
-                      ))}
+                            <div className="w-9 h-9 rounded-full bg-[#1F1F23] text-white flex items-center justify-center flex-shrink-0">
+                              <ChevronRight className="w-4 h-4" />
+                            </div>
+                          </button>
+                        );
+                      })}
 
                       {/* Vacation Staff cards (disabled, non-clickable) */}
-                      {vacationStaff.map((st: any) => (
-                        <div
-                          key={st.id}
-                          className="w-full text-left bg-zinc-50 border border-dashed border-zinc-300 text-zinc-400 rounded-2xl md:rounded-full p-2.5 pr-4 flex items-center justify-between cursor-not-allowed opacity-75"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-200 border-2 border-zinc-300 flex-shrink-0 grayscale">
-                              {renderStaffAvatar(st, "text-xs text-zinc-500")}
-                            </div>
-                            <div>
-                              <div className="font-bold text-sm text-zinc-700 flex items-center gap-1.5">
-                                <span>{st.displayName}</span>
-                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-                                  🏖️ En vacaciones
-                                </span>
-                              </div>
-                              <div className="text-xs text-zinc-500">
-                                Sin turnos en los próximos {horizonDays} días
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                      {vacationStaff.map((st: any) => renderVacationStaffCard(st, false))}
                     </div>
                   </>
                 )}
@@ -1332,12 +1518,12 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
           {step === 3 && (
             <div className="flex-1 flex flex-col justify-between">
               <div>
-                <div className="mb-4 flex items-center gap-2 overflow-x-auto no-scrollbar">
-                  <span className="bg-zinc-100 text-zinc-800 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap">
+                <div className="mb-4 flex items-center gap-2 flex-wrap">
+                  <span className="bg-zinc-100 text-zinc-800 px-3 py-1.5 rounded-full text-xs font-semibold">
                     {selectedService?.name} ({settings?.currencySymbol || "$"}
                     {selectedService?.price})
                   </span>
-                  <span className="bg-zinc-100 text-zinc-800 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap">
+                  <span className="bg-zinc-100 text-zinc-800 px-3 py-1.5 rounded-full text-xs font-semibold">
                     {selectedStaffId === "ANY"
                       ? `Cualquier ${settings?.staffLabel || "Profesional"}`
                       : selectedStaffObj?.displayName}
@@ -1360,8 +1546,9 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                             );
                             if (idx > 0) setSelectedDateStr(dateOptions[idx - 1].dateStr);
                           }}
-                          className="w-7 h-7 rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 flex items-center justify-center text-xs font-bold"
+                          className="w-9 h-9 rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 flex items-center justify-center text-sm font-bold transition-all active:scale-95"
                           title="Día anterior"
+                          aria-label="Día anterior"
                         >
                           ‹
                         </button>
@@ -1374,8 +1561,9 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                             if (idx < dateOptions.length - 1)
                               setSelectedDateStr(dateOptions[idx + 1].dateStr);
                           }}
-                          className="w-7 h-7 rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 flex items-center justify-center text-xs font-bold"
+                          className="w-9 h-9 rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-800 flex items-center justify-center text-sm font-bold transition-all active:scale-95"
                           title="Día siguiente"
+                          aria-label="Día siguiente"
                         >
                           ›
                         </button>
@@ -1383,46 +1571,95 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     </div>
 
                     {/* Horizontal scroll on mobile, sleek wrap/grid on desktop */}
-                    <div className="overflow-x-auto no-scrollbar pill-slider flex md:grid md:grid-cols-3 gap-2.5 py-1 px-1">
-                      {dateOptions.map((item) => {
-                        const isSelected = selectedDateStr === item.dateStr;
-                        return (
-                          <button
-                            key={item.dateStr}
-                            onClick={() => setSelectedDateStr(item.dateStr)}
-                            className={`flex-shrink-0 min-w-[84px] md:min-w-0 py-2.5 px-3 rounded-2xl flex flex-col items-center justify-center transition-all ${
-                              isSelected
-                                ? "bg-[#1F1F23] text-white shadow-md scale-[1.03] ring-2 ring-[#1F1F23]/25 font-bold"
-                                : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300 font-semibold"
-                            }`}
-                          >
-                            <span className="text-[10px] font-bold uppercase opacity-85 leading-tight">
-                              {item.dayShort}
-                            </span>
-                            <span className="text-sm font-extrabold mt-0.5">
-                              {item.dayNumber}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {(() => {
+                      const calendarTargetStaff =
+                        selectedStaffId !== "ANY"
+                          ? staffList.filter((s: any) => s.id === selectedStaffId)
+                          : getEligibleStaffForService(selectedService).filter(
+                              (s: any) => s.isActive !== false
+                            );
+
+                      return (
+                        <div className="overflow-x-auto no-scrollbar pill-slider flex items-stretch md:grid md:grid-cols-3 gap-2.5 py-2 px-1.5 -mx-1">
+                          {dateOptions.map((item) => {
+                            const isSelected = selectedDateStr === item.dateStr;
+                            const matchingFullBlocks =
+                              calendarTargetStaff.length > 0 &&
+                              calendarTargetStaff.every((st: any) =>
+                                (st.timeOffs || []).some(
+                                  (to: any) =>
+                                    (to.type === "VACATION" || to.type === "FULL_DAY_OFF") &&
+                                    isTimeOffOnDate(to, item.dateStr)
+                                )
+                              )
+                                ? calendarTargetStaff.flatMap((st: any) =>
+                                    (st.timeOffs || []).filter(
+                                      (to: any) =>
+                                        (to.type === "VACATION" || to.type === "FULL_DAY_OFF") &&
+                                        isTimeOffOnDate(to, item.dateStr)
+                                    )
+                                  )
+                                : [];
+                            const hasVacationBadge = matchingFullBlocks.some(
+                              (to: any) => to.type === "VACATION"
+                            );
+                            const hasClosedBadge =
+                              !hasVacationBadge && matchingFullBlocks.length > 0;
+
+                            return (
+                              <button
+                                key={item.dateStr}
+                                onClick={() => setSelectedDateStr(item.dateStr)}
+                                className={`flex-shrink-0 min-w-[84px] md:min-w-0 py-2.5 px-3 rounded-2xl flex flex-col items-center justify-center transition-colors duration-100 ${
+                                  isSelected
+                                    ? "bg-[#1F1F23] text-white shadow-md ring-2 ring-[#1F1F23]/25 font-bold"
+                                    : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300 font-semibold"
+                                }`}
+                              >
+                                <span className="text-[10px] font-bold uppercase opacity-85 leading-tight">
+                                  {item.dayShort}
+                                </span>
+                                <span className="text-sm font-extrabold mt-0.5">
+                                  {item.dayNumber}
+                                </span>
+                                {(hasVacationBadge || hasClosedBadge) && (
+                                  <span
+                                    className={`text-[9px] font-bold mt-0.5 leading-none whitespace-nowrap ${
+                                      isSelected
+                                        ? hasVacationBadge
+                                          ? "text-amber-300"
+                                          : "text-rose-300"
+                                        : hasVacationBadge
+                                        ? "text-amber-800"
+                                        : "text-rose-700"
+                                    }`}
+                                  >
+                                    {hasVacationBadge ? "🏖️ Vacac." : "⛔ Cerrado"}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Right Column on Desktop: Time slots */}
                   <div className="md:col-span-7 mt-5 md:mt-0">
-                    <div className="flex items-center justify-between mb-2.5">
-                      <div>
-                        <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <div className="flex items-start sm:items-center justify-between gap-3 mb-2.5">
+                      <div className="min-w-0">
+                        <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5 flex-wrap">
                           <span>Horarios disponibles</span>
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 whitespace-nowrap">
                             En vivo
                           </span>
                         </label>
-                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                        <p className="text-[11px] text-zinc-400 mt-0.5 leading-snug">
                           Solo se muestran turnos disponibles. Los horarios ocupados o con imprevistos quedan ocultos.
                         </p>
                       </div>
-                      <span className="text-xs text-zinc-600 font-bold bg-zinc-100 border border-zinc-200 px-2.5 py-1 rounded-full">
+                      <span className="text-xs text-zinc-600 font-bold bg-zinc-100 border border-zinc-200 px-3 py-1 rounded-full whitespace-nowrap shrink-0">
                         {availableSlots.length} {availableSlots.length === 1 ? "libre" : "libres"}
                       </span>
                     </div>
@@ -1431,58 +1668,138 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       <div className="py-10 text-center text-xs text-zinc-500 animate-pulse">
                         Buscando horarios libres...
                       </div>
-                    ) : availableSlots.length === 0 ? (
-                      <div className="py-8 px-4 bg-zinc-50 rounded-2xl text-center text-xs text-zinc-600 border border-zinc-200">
-                        {selectedDateStr === formatLocalDateYYYYMMDD(new Date()) ? (
-                          <div>
-                            <p className="font-bold text-zinc-800 text-sm">No quedan horarios disponibles para hoy.</p>
-                            <p className="text-[11px] text-zinc-500 mt-1">
-                              El horario de atención ha finalizado o los cupos de hoy están completos. Selecciona mañana u otra fecha en el calendario.
-                            </p>
-                          </div>
-                        ) : (
-                          <div>
-                            <p className="font-bold text-zinc-800 text-sm">Sin cupos disponibles en esta fecha.</p>
-                            <p className="text-[11px] text-zinc-500 mt-1">
-                              No hay turnos libres para este día. Por favor elige otra fecha disponible en el calendario.
-                            </p>
+                    ) : availableSlots.length === 0 ? (() => {
+                      const isTodaySelected =
+                        selectedDateStr === formatLocalDateYYYYMMDD(new Date());
+                      const theme =
+                        (unavailableReason?.code &&
+                          EMPTY_STATE_THEMES[unavailableReason.code]) ||
+                        DEFAULT_EMPTY_THEME;
+                      const heading =
+                        unavailableReason?.title ||
+                        (isTodaySelected
+                          ? "No quedan horarios disponibles para hoy."
+                          : "Sin cupos disponibles en esta fecha.");
+                      const description =
+                        unavailableReason?.description ||
+                        (isTodaySelected
+                          ? "El horario de atención ha finalizado o los cupos de hoy están completos. Selecciona mañana u otra fecha en el calendario."
+                          : "No hay turnos libres para este día. Por favor elige otra fecha disponible en el calendario.");
+                      const blocks = unavailableReason?.blocks || [];
+
+                      return (
+                        <div
+                          className={`py-7 px-4 sm:px-5 rounded-2xl text-center text-xs border ${theme.box}`}
+                        >
+                          {theme.emoji && (
+                            <div className="w-11 h-11 mx-auto mb-2.5 rounded-full bg-white/90 border border-black/5 flex items-center justify-center text-xl shadow-2xs">
+                              {theme.emoji}
+                            </div>
+                          )}
+                          <p className={`font-bold text-sm ${theme.title}`}>
+                            {heading}
+                          </p>
+
+                          {blocks.length > 0 && (
+                            <div className="mt-3 space-y-2 text-left max-w-md mx-auto">
+                              {blocks.map((block) => {
+                                const info = describeTimeOffBlock(block);
+                                return (
+                                  <div
+                                    key={block.id}
+                                    className="p-3 rounded-xl bg-white/90 border border-zinc-200/80 shadow-2xs space-y-1"
+                                  >
+                                    <div className="flex items-center justify-between gap-2 flex-wrap text-xs font-bold text-zinc-900">
+                                      <span>
+                                        {info.badgeEmoji}{" "}
+                                        {selectedStaffId === "ANY" && block.staffName
+                                          ? `${block.staffName}: ${info.categoryTitle}`
+                                          : info.categoryTitle}
+                                      </span>
+                                      <span className="text-[11px] font-semibold text-zinc-600">
+                                        📅 {info.periodLabel}
+                                      </span>
+                                    </div>
+                                    {info.note && (
+                                      <div className="text-xs text-zinc-700 pt-1 border-t border-zinc-100 break-words leading-snug">
+                                        <span className="font-bold text-zinc-600">
+                                          Motivo / nota:{" "}
+                                        </span>
+                                        <span>{info.note}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          <p className="text-[11px] opacity-85 mt-2.5 max-w-md mx-auto leading-relaxed">
+                            {description}
+                          </p>
+
+                          {settings?.phoneWhatsapp && (
+                            <div
+                              className={`mt-3.5 pt-2.5 border-t flex items-center justify-center ${theme.divider}`}
+                            >
+                              <a
+                                href={`https://wa.me/${settings.phoneWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
+                                  `Hola, quisiera consultar con el consultorio sobre disponibilidad de turnos o sobrecupo para ${selectedService?.name || "el servicio"} en fecha ${selectedDateStr}.`
+                                )}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                              >
+                                <WhatsAppIcon className="w-3.5 h-3.5" />
+                                <span>Consultar disponibilidad por WhatsApp</span>
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })() : (
+                      <>
+                        {selectedStaffId !== "ANY" && timeOffNotices.length > 0 && (
+                          <div className="mb-3 p-3 rounded-2xl bg-amber-50/80 border border-amber-200/80 text-xs text-amber-950 space-y-1.5">
+                            {timeOffNotices.map((notice) => {
+                              const info = describeTimeOffBlock(notice);
+                              return (
+                                <div key={notice.id} className="flex items-start gap-2">
+                                  <span className="shrink-0 mt-0.5">{info.badgeEmoji}</span>
+                                  <div className="min-w-0">
+                                    <span className="font-bold">{info.categoryTitle}:</span>{" "}
+                                    <span>{info.periodLabel}</span>
+                                    {info.note && (
+                                      <div className="text-[11px] text-amber-900 mt-0.5 break-words">
+                                        <span className="font-semibold">Motivo / nota:</span>{" "}
+                                        {info.note}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
-                        {settings?.phoneWhatsapp && (
-                          <div className="mt-3.5 pt-2.5 border-t border-zinc-200 flex items-center justify-center">
-                            <a
-                              href={`https://wa.me/${settings.phoneWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
-                                `Hola, quisiera consultar con el consultorio sobre disponibilidad de turnos o sobrecupo para ${selectedService?.name || "el servicio"} en fecha ${selectedDateStr}.`
-                              )}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
-                            >
-                              <MessageCircle className="w-3.5 h-3.5" />
-                              <span>Consultar disponibilidad por WhatsApp</span>
-                            </a>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
-                        {availableSlots.map((slot) => {
-                          const isSelected = selectedTime === slot;
-                          return (
-                            <button
-                              key={slot}
-                              onClick={() => setSelectedTime(slot)}
-                              className={`py-3 rounded-xl md:rounded-2xl text-xs font-bold transition-all ${
-                                isSelected
-                                  ? "bg-[#1F1F23] text-white shadow-md scale-[1.03]"
-                                  : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
-                              }`}
-                            >
-                              {slot}
-                            </button>
-                          );
-                        })}
-                      </div>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                          {availableSlots.map((slot) => {
+                            const isSelected = selectedTime === slot;
+                            return (
+                              <button
+                                key={slot}
+                                onClick={() => setSelectedTime(slot)}
+                                className={`min-h-[44px] py-3 rounded-xl md:rounded-2xl text-xs font-bold transition-all ${
+                                  isSelected
+                                    ? "bg-[#1F1F23] text-white shadow-md scale-[1.03]"
+                                    : "bg-zinc-200 text-zinc-900 hover:bg-zinc-300"
+                                }`}
+                              >
+                                {slot}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1524,23 +1841,23 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     </div>
 
                     <div className="mt-4 pt-3 border-t border-white/15 space-y-2 text-xs md:text-sm text-white">
-                      <div className="flex justify-between">
-                        <span className="text-zinc-300">Servicio:</span>
-                        <span className="font-bold">{selectedService?.name}</span>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-zinc-300 shrink-0">Servicio:</span>
+                        <span className="font-bold text-right break-words">{selectedService?.name}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-zinc-300">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-zinc-300 shrink-0">
                           {settings?.staffLabel || "Profesional"}:
                         </span>
-                        <span className="font-bold">
+                        <span className="font-bold text-right break-words">
                           {selectedStaffId === "ANY"
                             ? `Cualquier ${settings?.staffLabel || "Profesional"}`
                             : selectedStaffObj?.displayName}
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-zinc-300">Fecha y Hora:</span>
-                        <span className="font-bold">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-zinc-300 shrink-0">Fecha y Hora:</span>
+                        <span className="font-bold text-right whitespace-nowrap">
                           {selectedDateStr} • {selectedTime}
                         </span>
                       </div>
@@ -1548,14 +1865,14 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                   </div>
 
                   {/* Lugar de la Cita (Píldora limpia y compacta) */}
-                  <div className="p-4 bg-zinc-100 rounded-2xl flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2.5">
-                      <MapPin className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                      <div>
-                        <div className="font-bold text-zinc-900">
+                  <div className="p-3.5 sm:p-4 bg-zinc-100 rounded-2xl flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                      <MapPin className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5 sm:mt-0" />
+                      <div className="min-w-0">
+                        <div className="font-bold text-zinc-900 break-words">
                           {settings?.name || "Clínica & Reservas"}
                         </div>
-                        <div className="text-[11px] text-zinc-500">
+                        <div className="text-[11px] text-zinc-500 break-words">
                           {settings?.addressText || "Av. Simón López esq. Av. Beijing, Cochabamba"}
                         </div>
                       </div>
@@ -1563,7 +1880,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     <button
                       type="button"
                       onClick={() => setShowMapModal(true)}
-                      className="text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-full border border-rose-200 transition-all flex-shrink-0"
+                      className="text-xs sm:text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 min-h-[36px] rounded-full border border-rose-200 transition-all flex-shrink-0 whitespace-nowrap"
                     >
                       Ver mapa
                     </button>
@@ -1571,39 +1888,39 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                 </div>
 
                 {/* Right Column on Desktop: Contact & Identity Form */}
-                <div className="md:col-span-7 space-y-4 mt-2 md:mt-0">
+                <div className="md:col-span-7 space-y-4 mt-4 md:mt-0">
                   {/* Customer Identity Section */}
                   {currentUser ? (
-                    <div className="p-3.5 bg-zinc-100 rounded-2xl flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2.5">
+                    <div className="p-3.5 bg-zinc-100 rounded-2xl flex items-center justify-between flex-wrap gap-2.5 text-xs">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         {currentUser?.avatarUrl ? (
                           <img
                             src={currentUser.avatarUrl}
                             alt="Avatar"
-                            className="w-8 h-8 rounded-full object-cover border border-zinc-300"
+                            className="w-8 h-8 rounded-full object-cover border border-zinc-300 shrink-0"
                           />
                         ) : (
-                          <div className="w-8 h-8 rounded-full bg-[#1F1F23] text-white flex items-center justify-center font-bold text-xs uppercase">
+                          <div className="w-8 h-8 rounded-full bg-[#1F1F23] text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
                             {currentUser?.name?.charAt(0) || "U"}
                           </div>
                         )}
-                        <div>
-                          <div className="font-bold text-zinc-900">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-zinc-900 truncate">
                             {currentUser.name}
                           </div>
-                          <div className="text-xs text-zinc-500">
+                          <div className="text-xs text-zinc-500 truncate">
                             {currentUser.email}
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full whitespace-nowrap">
                           {currentUser?.googleId ? "Google Verificado ✓" : "Verificado"}
                         </span>
                         <button
                           type="button"
                           onClick={handleLogout}
-                          className="text-[11px] text-zinc-500 hover:text-black underline"
+                          className="text-xs text-zinc-500 hover:text-black underline py-1 px-1"
                         >
                           Salir
                         </button>
@@ -1611,14 +1928,14 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     </div>
                   ) : (
                     <div className="space-y-3 bg-zinc-50 border border-zinc-200 p-4 rounded-2xl">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
                         <span className="text-xs font-bold text-zinc-800">
                           Identificación del Paciente
                         </span>
                         <button
                           type="button"
                           onClick={() => setShowAuthModal(true)}
-                          className="text-[11px] font-semibold text-[#1F1F23] underline hover:text-zinc-600"
+                          className="text-xs sm:text-[11px] font-semibold text-[#1F1F23] underline hover:text-zinc-600 py-1"
                         >
                           ¿Tienes cuenta? Ingresa
                         </button>
@@ -1627,7 +1944,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       {/* Botón 1-Clic Google OAuth */}
                       <a
                         href="/api/auth/google?returnTo=/"
-                        className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-zinc-100 text-zinc-800 text-xs font-bold border border-zinc-300 shadow-2xs flex items-center justify-center gap-2 transition-all"
+                        className="w-full min-h-[42px] py-2.5 px-3 rounded-xl bg-white hover:bg-zinc-100 text-zinc-800 text-xs font-bold border border-zinc-300 shadow-2xs flex items-center justify-center gap-2 transition-all"
                       >
                         <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
                           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -1646,7 +1963,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                         <div className="flex-1 h-px bg-zinc-200" />
                       </div>
 
-                      <div className="border border-zinc-300 bg-white rounded-xl px-3.5 py-2">
+                      <div className="border border-zinc-300 bg-white rounded-xl px-3.5 py-2.5">
                         <label className="text-[11px] text-zinc-500 block font-medium">
                           Nombre Completo *
                         </label>
@@ -1655,11 +1972,11 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                           value={guestName}
                           onChange={(e) => setGuestName(e.target.value)}
                           placeholder="Ej. Juan Pérez"
-                          className="bg-transparent font-semibold text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
+                          className="bg-transparent font-semibold text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
                         />
                       </div>
 
-                      <div className="border border-zinc-300 bg-white rounded-xl px-3.5 py-2">
+                      <div className="border border-zinc-300 bg-white rounded-xl px-3.5 py-2.5">
                         <label className="text-[11px] text-zinc-500 block font-medium">
                           Correo Electrónico *
                         </label>
@@ -1668,12 +1985,12 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                           value={guestEmail}
                           onChange={(e) => setGuestEmail(e.target.value)}
                           placeholder="tucorreo@ejemplo.com"
-                          className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
+                          className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
                         />
                       </div>
 
-                      <div className="border border-zinc-300 bg-white rounded-xl px-3.5 py-2">
-                        <div className="flex items-center justify-between">
+                      <div className="border border-zinc-300 bg-white rounded-xl px-3.5 py-2.5">
+                        <div className="flex items-center justify-between gap-2">
                           <label className="text-[11px] text-zinc-500 block font-medium">
                             Contraseña *
                           </label>
@@ -1684,7 +2001,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                           value={guestPassword}
                           onChange={(e) => setGuestPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
+                          className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
                         />
                         <span className="text-[10px] text-zinc-400 block mt-0.5">
                           Protege tu reserva para que nadie más acceda a tus citas.
@@ -1696,7 +2013,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                   {/* Phone Input */}
                   <div className="border-[1.5px] border-[#1F1F23] bg-[#F4F4F6] rounded-2xl px-4 py-2.5 flex items-center gap-3">
                     <Phone className="w-4 h-4 text-zinc-600 flex-shrink-0" />
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <label className="text-xs text-zinc-500 block font-medium">
                         Teléfono / WhatsApp (Obligatorio)
                       </label>
@@ -1705,23 +2022,29 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                         value={customerPhone}
                         onChange={(e) => setCustomerPhone(e.target.value)}
                         placeholder="+52 55 1234 5678"
-                        className="bg-transparent font-semibold text-sm text-[#1F1F23] focus:outline-none w-full"
+                        className="bg-transparent font-semibold text-base sm:text-sm text-[#1F1F23] focus:outline-none w-full"
                       />
                     </div>
                   </div>
 
                   {/* Optional Comment */}
                   <div className="border-[1.5px] border-zinc-300 bg-[#F4F4F6] rounded-2xl px-4 py-2.5 flex items-center gap-3">
-                    <div className="flex-1">
-                      <label className="text-xs text-zinc-500 block font-medium">
-                        Nota o comentario (Opcional)
-                      </label>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-xs text-zinc-500 block font-medium">
+                          Nota o comentario (Opcional)
+                        </label>
+                        <span className="text-[10px] text-zinc-400">
+                          {customerNotes.length}/200
+                        </span>
+                      </div>
                       <input
                         type="text"
+                        maxLength={200}
                         value={customerNotes}
                         onChange={(e) => setCustomerNotes(e.target.value)}
                         placeholder="Ej. Motivo de consulta o detalle especial"
-                        className="bg-transparent font-medium text-sm text-[#1F1F23] focus:outline-none w-full"
+                        className="bg-transparent font-medium text-base sm:text-sm text-[#1F1F23] focus:outline-none w-full"
                       />
                     </div>
                   </div>
@@ -1752,7 +2075,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     </div>
                   )}
 
-                  <div className="pt-2">
+                  <div className="pt-2 space-y-2.5">
                     <button
                       onClick={handleConfirmBooking}
                       disabled={bookingLoading}
@@ -1765,6 +2088,27 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       </span>
                       <Check className="w-4 h-4" />
                     </button>
+                    <p className="text-[11px] text-zinc-500 text-center leading-relaxed px-2">
+                      Al confirmar aceptas los{" "}
+                      <Link
+                        href="/terminos"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-zinc-700 font-semibold underline hover:text-black"
+                      >
+                        Términos y Condiciones
+                      </Link>{" "}
+                      (cancelación gratuita hasta {settings?.minCancelNoticeHours ?? 6} h antes) y la{" "}
+                      <Link
+                        href="/privacidad"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-zinc-700 font-semibold underline hover:text-black"
+                      >
+                        Política de Privacidad
+                      </Link>
+                      . {isHealthBusiness ? "Portal no apto para emergencias médicas." : "Sujeto a disponibilidad de agenda."}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1791,22 +2135,22 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                 Tu horario ha quedado reservado exitosamente.
               </p>
 
-              <div className="mt-6 w-full bg-[#F4F4F6] rounded-[24px] p-4 text-left text-xs space-y-2 border border-zinc-200">
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Servicio:</span>
-                  <span className="font-bold text-zinc-900">
+              <div className="mt-6 w-full max-w-md bg-[#F4F4F6] rounded-[24px] p-4 text-left text-xs space-y-2 border border-zinc-200">
+                <div className="flex justify-between gap-3">
+                  <span className="text-zinc-500 shrink-0">Servicio:</span>
+                  <span className="font-bold text-zinc-900 text-right break-words">
                     {confirmedAppointment.service?.name}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Con:</span>
-                  <span className="font-bold text-zinc-900">
+                <div className="flex justify-between gap-3">
+                  <span className="text-zinc-500 shrink-0">Con:</span>
+                  <span className="font-bold text-zinc-900 text-right break-words">
                     {confirmedAppointment.staff?.displayName}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Cuándo:</span>
-                  <span className="font-bold text-zinc-900">
+                <div className="flex justify-between gap-3">
+                  <span className="text-zinc-500 shrink-0">Cuándo:</span>
+                  <span className="font-bold text-zinc-900 text-right">
                     {new Date(confirmedAppointment.startAt).toLocaleDateString(
                       "es-ES",
                       {
@@ -1825,11 +2169,20 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     )}
                   </span>
                 </div>
+                {confirmedAppointment.customerNotes && (
+                  <div className="pt-2 mt-1 border-t border-zinc-200/80 space-y-0.5">
+                    <span className="text-zinc-500 block text-[11px]">Tu nota / detalle:</span>
+                    <p className="font-semibold text-zinc-900 break-words leading-snug">
+                      {confirmedAppointment.customerNotes}
+                    </p>
+                  </div>
+                )}
               </div>
 
-              <div className="mt-6 w-full space-y-2.5">
+              <div className="mt-6 w-full max-w-md space-y-2.5">
                 <button
                   onClick={() => {
+                    resetBookingWizardState();
                     setStep(1);
                     setActiveTab("my-appointments");
                   }}
@@ -1838,7 +2191,10 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                   Ver en Mis Citas
                 </button>
                 <button
-                  onClick={() => setStep(1)}
+                  onClick={() => {
+                    resetBookingWizardState();
+                    setStep(1);
+                  }}
                   className="w-full rounded-full bg-zinc-100 text-zinc-700 h-12 font-semibold text-xs hover:bg-zinc-200"
                 >
                   Volver al Inicio
@@ -1902,6 +2258,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                         </p>
                         <button
                           onClick={() => {
+                            resetBookingWizardState();
                             setActiveTab("book");
                             setStep(1);
                           }}
@@ -1976,6 +2333,20 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                             </div>
                           </div>
 
+                          {apt.customerNotes && (
+                            <div className="mt-2.5 p-2.5 rounded-2xl bg-white/85 border border-zinc-200/80 text-xs text-zinc-700 flex items-start gap-2">
+                              <FileText className="w-3.5 h-3.5 text-zinc-400 shrink-0 mt-0.5" />
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">
+                                  Tu nota / detalle:
+                                </span>
+                                <p className="text-xs text-zinc-800 break-words leading-snug mt-0.5">
+                                  {apt.customerNotes}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
                           {!isPast && (
                             <div className="mt-3 pt-2.5 border-t border-zinc-200 flex items-center justify-between">
                               {apt.canCancel ? (
@@ -2006,7 +2377,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                                   rel="noreferrer"
                                   className="text-xs font-bold text-[#1F1F23] flex items-center gap-1 hover:underline"
                                 >
-                                  <MessageCircle className="w-3.5 h-3.5" />
+                                  <WhatsAppIcon className="w-4 h-4 text-[#16A34A]" />
                                   <span>WhatsApp</span>
                                 </a>
                               )}
@@ -2059,6 +2430,11 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                           </b>{" "}
                           con {apt.staff?.displayName}
                         </div>
+                        {apt.customerNotes && (
+                          <div className="mt-2 p-2 rounded-xl bg-white/85 border border-amber-200 text-[11px] text-zinc-700 break-words">
+                            <b>Tu nota / detalle:</b> {apt.customerNotes}
+                          </div>
+                        )}
                         <p className="text-[11px] text-amber-800 mt-1 font-medium">
                           Esta falta contabiliza para el bloqueo automático. Si
                           fue justificable, contáctanos por WhatsApp para
@@ -2075,7 +2451,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                               rel="noreferrer"
                               className="px-3.5 py-1.5 rounded-full bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 flex items-center gap-1"
                             >
-                              <MessageCircle className="w-3.5 h-3.5" />
+                              <WhatsAppIcon className="w-3.5 h-3.5" />
                               <span>Justificar por WhatsApp</span>
                             </a>
                           </div>
@@ -2091,19 +2467,19 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     <button
                       type="button"
                       onClick={() => setShowHistory(!showHistory)}
-                      className="w-full py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-xs font-bold text-zinc-700 flex items-center justify-between transition-all"
+                      className="w-full min-h-[44px] py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-xs font-bold text-zinc-700 flex items-center justify-between gap-3 text-left transition-all"
                     >
-                      <span>
+                      <span className="min-w-0 leading-snug">
                         📂 Historial de citas pasadas y archivo ({historyTotal})
                       </span>
-                      <span className="text-[11px] text-zinc-500">
+                      <span className="text-[11px] text-zinc-500 whitespace-nowrap shrink-0">
                         {showHistory ? "Ocultar ▲" : "Ver historial ▼"}
                       </span>
                     </button>
 
                     {showHistory && (
                       <div className="space-y-3 pt-2.5">
-                        <div className="flex items-center justify-between text-[11px] text-zinc-500 px-1">
+                        <div className="flex items-center justify-between flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500 px-1">
                           <span>
                             Mostrando <b>{historyItems.length}</b> de <b>{historyTotal}</b> citas
                           </span>
@@ -2160,8 +2536,8 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
 
       {/* CANCELLATION POLICY MODAL */}
       {policyModal?.open && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[28px] p-6 max-w-sm w-full text-center shadow-2xl">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-[28px] p-5 sm:p-6 max-w-sm w-full text-center shadow-2xl max-h-[92dvh] overflow-y-auto">
             <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto mb-3" />
             <h3 className="text-base font-bold text-zinc-900">
               Política de Cancelación
@@ -2170,18 +2546,19 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
               {policyModal.message}
             </p>
 
-            <div className="mt-5 flex gap-2">
+            <div className="mt-5 flex flex-col sm:flex-row gap-2">
               <a
                 href={policyModal.whatsappUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex-1 py-3 rounded-full bg-[#1F1F23] text-white text-xs font-semibold hover:bg-black"
+                className="flex-1 min-h-[42px] py-3 rounded-full bg-[#1F1F23] text-white text-xs font-semibold hover:bg-black flex items-center justify-center gap-1.5"
               >
-                Hablar por WhatsApp
+                <WhatsAppIcon className="w-4 h-4 text-[#25D366]" />
+                <span>Hablar por WhatsApp</span>
               </a>
               <button
                 onClick={() => setPolicyModal(null)}
-                className="py-3 px-5 rounded-full bg-zinc-100 text-zinc-700 text-xs font-semibold hover:bg-zinc-200"
+                className="min-h-[42px] py-3 px-5 rounded-full bg-zinc-100 text-zinc-700 text-xs font-semibold hover:bg-zinc-200"
               >
                 Cerrar
               </button>
@@ -2192,25 +2569,26 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
 
       {/* MODAL DE UBICACIÓN Y MAPA INTERACTIVO */}
       {showMapModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[28px] max-w-sm w-full overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between p-4 border-b border-zinc-100 bg-zinc-50/70">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-[28px] max-w-sm w-full overflow-hidden shadow-2xl max-h-[92dvh] overflow-y-auto">
+            <div className="flex items-center justify-between gap-2 p-4 border-b border-zinc-100 bg-zinc-50/70">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100 shrink-0">
                   <MapPin className="w-4 h-4 text-rose-600" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#1F1F23]">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-[#1F1F23] truncate">
                     Ubicación de la Sucursal
                   </h3>
-                  <p className="text-[11px] text-zinc-500">Cochabamba, Bolivia</p>
+                  <p className="text-[11px] text-zinc-500 truncate">Cochabamba, Bolivia</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowMapModal(false)}
-                className="w-8 h-8 rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-700 flex items-center justify-center transition-all"
+                className="w-9 h-9 rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-700 flex items-center justify-center transition-all shrink-0"
                 title="Cerrar mapa"
+                aria-label="Cerrar mapa"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2223,7 +2601,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                 lat={-17.3713}
                 lng={-66.1742}
                 googleMapsUrl={settings?.googleMapsUrl}
-                height="260px"
+                height="240px"
               />
             </div>
           </div>
@@ -2232,18 +2610,18 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
 
       {/* MODAL DE INSTALACIÓN PWA (INSTALAR COMO APP EN CELULAR / PC) */}
       {showPwaModal && (
-        <div className="fixed inset-0 bg-black/65 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-[#1F1F23] text-white flex items-center justify-center font-bold text-lg shadow-md">
+        <div className="fixed inset-0 bg-black/65 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-[32px] p-5 sm:p-6 max-w-sm w-full shadow-2xl max-h-[92dvh] overflow-y-auto">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-[#1F1F23] text-white flex items-center justify-center font-bold text-lg shadow-md shrink-0">
                   📲
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-[#1F1F23]">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-[#1F1F23] leading-snug">
                     Instalar como Aplicación (PWA)
                   </h3>
-                  <p className="text-[11px] text-zinc-500">
+                  <p className="text-[11px] text-zinc-500 leading-snug">
                     Acceso directo sin usar memoria del teléfono
                   </p>
                 </div>
@@ -2251,7 +2629,8 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
               <button
                 type="button"
                 onClick={() => setShowPwaModal(false)}
-                className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 flex items-center justify-center font-bold text-xs"
+                aria-label="Cerrar instalación PWA"
+                className="w-9 h-9 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 flex items-center justify-center font-bold text-xs shrink-0"
               >
                 ✕
               </button>
@@ -2287,7 +2666,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                   setPwaInstalled(true);
                   setShowPwaModal(false);
                 }}
-                className="w-full py-3.5 rounded-full bg-[#1F1F23] hover:bg-black text-white text-xs font-bold shadow-md transition-all"
+                className="w-full min-h-[44px] py-3.5 rounded-full bg-[#1F1F23] hover:bg-black text-white text-xs font-bold shadow-md transition-all"
               >
                 {pwaInstalled
                   ? "✓ Aplicación ya instalada en tu inicio"
@@ -2296,7 +2675,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
               <button
                 type="button"
                 onClick={() => setShowPwaModal(false)}
-                className="w-full py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold"
+                className="w-full min-h-[40px] py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold"
               >
                 Cerrar
               </button>
@@ -2306,45 +2685,85 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
       )}
 
       {/* 5. Production Footer */}
-      <footer className="mt-auto px-5 md:px-8 py-6 md:py-7 text-center border-t border-zinc-200/80 bg-zinc-50/50 text-xs text-zinc-500 space-y-2 md:rounded-b-[32px]">
-        <p className="font-semibold text-zinc-700">{settings?.name || "Clínica & Reservas"}</p>
-        <p className="text-[11px] text-zinc-400">
-          {settings?.addressText || "Atención con cita previa"}
+      <footer className="mt-auto px-5 md:px-8 py-6 md:py-7 text-center border-t border-zinc-200/80 bg-zinc-50/50 text-xs text-zinc-500 space-y-2.5 md:rounded-b-[32px]">
+        <div className="space-y-0.5">
+          <p className="font-semibold text-zinc-700">{settings?.name || "Clínica & Reservas"}</p>
+          <p className="text-[11px] text-zinc-400">
+            {settings?.addressText || "Atención con cita previa"}
+          </p>
+        </div>
+
+        <p className="text-[11px] text-zinc-400 max-w-md mx-auto leading-relaxed">
+          {isHealthBusiness
+            ? "Agenda digital sujeta a disponibilidad y confirmación. Precios referenciales sujetos a valoración presencial. Este portal no atiende emergencias médicas ni urgencias vitales."
+            : "Agenda digital sujeta a disponibilidad y confirmación. Precios referenciales sujetos a evaluación presencial."}
         </p>
-        <div className="pt-2">
-          <a
+
+        <nav
+          aria-label="Enlaces legales"
+          className="pt-1 flex items-center justify-center flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-zinc-600"
+        >
+          <Link href="/terminos" className="py-1 px-1 hover:text-zinc-900 underline transition-colors">
+            Términos y Condiciones
+          </Link>
+          <span aria-hidden="true" className="text-zinc-300">•</span>
+          <Link href="/terminos#cancelaciones" className="py-1 px-1 hover:text-zinc-900 underline transition-colors">
+            Cancelaciones
+          </Link>
+          <span aria-hidden="true" className="text-zinc-300">•</span>
+          <Link href="/privacidad" className="py-1 px-1 hover:text-zinc-900 underline transition-colors">
+            Política de Privacidad
+          </Link>
+          <span aria-hidden="true" className="text-zinc-300">•</span>
+          <Link href="/cookies" className="py-1 px-1 hover:text-zinc-900 underline transition-colors">
+            Cookies
+          </Link>
+        </nav>
+
+        <div className="pt-2 border-t border-zinc-200/60 flex flex-col items-center gap-1">
+          <p className="text-[10px] text-zinc-400">
+            © {new Date().getFullYear()} {settings?.name || "Clínica & Reservas"}. Todos los derechos reservados.
+          </p>
+          <Link
             href="/admin"
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-900 underline transition-all"
+            className="inline-flex items-center gap-1 py-1.5 px-3 text-[11px] font-medium text-zinc-500 hover:text-zinc-900 underline transition-all"
           >
             <span>Acceso para Profesionales y Administración</span>
             <span>→</span>
-          </a>
+          </Link>
         </div>
       </footer>
 
       {/* 6. Account / Login Modal */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl relative border border-zinc-200">
-            <button
-              onClick={() => {
-                setShowAuthModal(false);
-                setAuthError(null);
-              }}
-              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-zinc-100 text-zinc-500 flex items-center justify-center hover:bg-zinc-200"
-            >
-              <X className="w-4 h-4" />
-            </button>
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 sm:p-6 shadow-2xl relative border border-zinc-200 max-h-[92dvh] overflow-y-auto">
+            <div className="flex items-center justify-between gap-2 pb-3 mb-3 border-b border-zinc-100">
+              <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                {currentUser ? "Mi Perfil" : "Cuenta de Paciente"}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAuthModal(false);
+                  setAuthError(null);
+                }}
+                aria-label="Cerrar ventana"
+                className="w-9 h-9 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 transition-all shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
             {currentUser ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-[#1F1F23] text-white flex items-center justify-center font-bold text-base uppercase">
+                  <div className="w-12 h-12 rounded-full bg-[#1F1F23] text-white flex items-center justify-center font-bold text-base uppercase shrink-0">
                     {currentUser.name?.charAt(0) || "U"}
                   </div>
-                  <div>
-                    <h3 className="font-bold text-base text-zinc-900">{currentUser.name}</h3>
-                    <p className="text-xs text-zinc-500">{currentUser.email}</p>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-base text-zinc-900 truncate">{currentUser.name}</h3>
+                    <p className="text-xs text-zinc-500 truncate">{currentUser.email}</p>
                     <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700">
                       {currentUser.role === "ADMIN"
                         ? "Administrador"
@@ -2365,7 +2784,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                 {(currentUser.role === "ADMIN" || currentUser.role === "PROVIDER") && (
                   <a
                     href="/admin"
-                    className="w-full py-3 rounded-full bg-[#1F1F23] text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-md"
+                    className="w-full min-h-[42px] py-3 rounded-full bg-[#1F1F23] text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-md"
                   >
                     <span>Ir al Panel de Gestión</span>
                     <span>→</span>
@@ -2378,17 +2797,17 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                     await handleLogout();
                     setShowAuthModal(false);
                   }}
-                  className="w-full py-2.5 rounded-full bg-zinc-100 text-red-600 hover:bg-red-50 text-xs font-bold transition-all border border-zinc-200"
+                  className="w-full min-h-[40px] py-2.5 rounded-full bg-zinc-100 text-red-600 hover:bg-red-50 text-xs font-bold transition-all border border-zinc-200"
                 >
                   Cerrar Sesión
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleAuthSubmit} className="space-y-4">
+              <form onSubmit={handleAuthSubmit} className="space-y-3.5">
                 {/* 1-Click Google OAuth */}
                 <a
                   href="/api/auth/google?returnTo=/"
-                  className="w-full py-3 px-4 rounded-full bg-white hover:bg-zinc-50 text-zinc-800 text-xs font-bold border border-zinc-300 shadow-xs flex items-center justify-center gap-2.5 transition-all"
+                  className="w-full min-h-[44px] py-3 px-4 rounded-full bg-white hover:bg-zinc-50 text-zinc-800 text-xs font-bold border border-zinc-300 shadow-xs flex items-center justify-center gap-2.5 transition-all"
                 >
                   <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -2415,7 +2834,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       setAuthMode("login");
                       setAuthError(null);
                     }}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-full transition-all ${
+                    className={`flex-1 min-h-[36px] py-1.5 text-xs font-bold rounded-full transition-all ${
                       authMode === "login"
                         ? "bg-[#1F1F23] text-white shadow-xs"
                         : "text-zinc-600 hover:text-black"
@@ -2429,7 +2848,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       setAuthMode("register");
                       setAuthError(null);
                     }}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-full transition-all ${
+                    className={`flex-1 min-h-[36px] py-1.5 text-xs font-bold rounded-full transition-all ${
                       authMode === "register"
                         ? "bg-[#1F1F23] text-white shadow-xs"
                         : "text-zinc-600 hover:text-black"
@@ -2458,7 +2877,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
 
                 <div className="space-y-3">
                   {authMode === "register" && (
-                    <div className="border border-zinc-300 bg-[#F4F4F6] rounded-xl px-3.5 py-2">
+                    <div className="border border-zinc-300 bg-[#F4F4F6] rounded-xl px-3.5 py-2.5">
                       <label className="text-[11px] text-zinc-500 block font-medium">
                         Nombre Completo *
                       </label>
@@ -2468,12 +2887,12 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                         value={authName}
                         onChange={(e) => setAuthName(e.target.value)}
                         placeholder="Ej. Juan Pérez"
-                        className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
+                        className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
                       />
                     </div>
                   )}
 
-                  <div className="border border-zinc-300 bg-[#F4F4F6] rounded-xl px-3.5 py-2">
+                  <div className="border border-zinc-300 bg-[#F4F4F6] rounded-xl px-3.5 py-2.5">
                     <label className="text-[11px] text-zinc-500 block font-medium">
                       Correo Electrónico *
                     </label>
@@ -2483,12 +2902,12 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
                       placeholder="tucorreo@ejemplo.com"
-                      className="bg-transparent font-semibold text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
+                      className="bg-transparent font-semibold text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
                     />
                   </div>
 
                   {authMode === "register" && (
-                    <div className="border border-zinc-300 bg-[#F4F4F6] rounded-xl px-3.5 py-2">
+                    <div className="border border-zinc-300 bg-[#F4F4F6] rounded-xl px-3.5 py-2.5">
                       <label className="text-[11px] text-zinc-500 block font-medium">
                         Teléfono / WhatsApp (Opcional)
                       </label>
@@ -2497,12 +2916,12 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                         value={authPhone}
                         onChange={(e) => setAuthPhone(e.target.value)}
                         placeholder="+591 70000000"
-                        className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
+                        className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
                       />
                     </div>
                   )}
 
-                  <div className="border border-zinc-300 bg-[#F4F4F6] rounded-xl px-3.5 py-2">
+                  <div className="border border-zinc-300 bg-[#F4F4F6] rounded-xl px-3.5 py-2.5">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] text-zinc-500 block font-medium">
                         Contraseña *
@@ -2515,7 +2934,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="bg-transparent font-semibold text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
+                      className="bg-transparent font-semibold text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full mt-0.5"
                     />
                   </div>
                 </div>
@@ -2524,7 +2943,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                   <button
                     type="submit"
                     disabled={authLoading}
-                    className="w-full py-3.5 rounded-full bg-[#1F1F23] text-white text-xs font-bold hover:bg-black transition-all shadow-md disabled:opacity-50"
+                    className="w-full min-h-[44px] py-3.5 rounded-full bg-[#1F1F23] text-white text-xs font-bold hover:bg-black transition-all shadow-md disabled:opacity-50"
                   >
                     {authLoading
                       ? "Procesando..."
@@ -2540,10 +2959,32 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                       setAuthError(null);
                       setAuthPassword("");
                     }}
-                    className="w-full py-2.5 rounded-full bg-zinc-100 text-zinc-600 text-xs font-semibold hover:bg-zinc-200 transition-all"
+                    className="w-full min-h-[40px] py-2.5 rounded-full bg-zinc-100 text-zinc-600 text-xs font-semibold hover:bg-zinc-200 transition-all"
                   >
                     Cerrar
                   </button>
+
+                  <p className="text-[10px] text-zinc-400 text-center leading-relaxed pt-1">
+                    Al continuar aceptas nuestros{" "}
+                    <Link
+                      href="/terminos"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-600 underline hover:text-black"
+                    >
+                      Términos y Condiciones
+                    </Link>{" "}
+                    y la{" "}
+                    <Link
+                      href="/privacidad"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-600 underline hover:text-black"
+                    >
+                      Política de Privacidad
+                    </Link>
+                    .
+                  </p>
                 </div>
               </form>
             )}

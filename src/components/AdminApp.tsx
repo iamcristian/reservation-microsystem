@@ -6,7 +6,6 @@ import {
   Clock,
   User,
   Phone,
-  MessageCircle,
   Shield,
   ShieldAlert,
   Settings,
@@ -28,9 +27,11 @@ import {
   Trash2,
   MapPin,
   Pencil,
+  FileText,
 } from "lucide-react";
 import BranchMap from "./BranchMap";
 import InteractiveMapPicker from "./InteractiveMapPicker";
+import { WhatsAppIcon } from "./WhatsAppIcon";
 import { formatLocalDateYYYYMMDD } from "@/lib/date-utils";
 import {
   validateAllShifts,
@@ -40,6 +41,7 @@ import {
   getDayScheduleStatus,
   getSuggestedOverrideTime,
   validateScheduleOverride,
+  validateVacationRange,
 } from "@/lib/validation/acceptance-criteria";
 
 interface AdminAppProps {
@@ -597,7 +599,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     staffId: "",
     startDate: "",
     endDate: "",
-    reason: "Vacaciones",
+    reason: "",
   });
 
   // White-label settings state
@@ -777,7 +779,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
           type: "VACATION",
           startAt: startAt.toISOString(),
           endAt: endAt.toISOString(),
-          reason: vacationModal.reason || "Vacaciones programadas",
+          reason: vacationModal.reason.trim() || null,
           resolution: resolution || (conflictData ? "CANCEL_ALL" : undefined),
         }),
       });
@@ -1183,10 +1185,10 @@ Al ingresar con tu correo de Google podrás:
       ];
 
   return (
-    <div className="w-full max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto min-h-screen bg-white text-[#1F1F23] pb-28 shadow-2xl relative border-x border-zinc-200 transition-all duration-300">
+    <div className="w-full max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto min-h-dvh bg-white text-[#1F1F23] pb-28 shadow-2xl relative border-x border-zinc-200 transition-all duration-300">
       {/* Top Header */}
-      <header className="p-4 border-b border-zinc-100 flex items-center justify-between sticky top-7 bg-white z-30 gap-2">
-        <div className="flex items-center gap-3">
+      <header className="p-3.5 sm:p-4 border-b border-zinc-100 flex flex-col sm:flex-row sm:items-center justify-between md:sticky md:top-[44px] bg-white z-30 gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <div className="w-11 h-11 rounded-full overflow-hidden border border-zinc-300 bg-zinc-100 flex-shrink-0 shadow-xs">
             <img
               src={
@@ -1197,10 +1199,10 @@ Al ingresar con tu correo de Google podrás:
               className="w-full h-full object-cover"
             />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span
-                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${
                   isOwnerAdmin
                     ? "bg-[#1F1F23] text-white"
                     : "bg-emerald-700 text-white"
@@ -1210,26 +1212,26 @@ Al ingresar con tu correo de Google podrás:
                   ? "👑 ADMIN / DUEÑO PRINCIPAL"
                   : "🩺 MODO EMPLEADO / DOCTOR"}
               </span>
-              <span className="text-xs font-semibold text-zinc-600">
+              <span className="text-xs font-semibold text-zinc-600 truncate">
                 {currentUser?.name || "Dr. Alejandro"}
               </span>
             </div>
-            <h1 className="font-bold text-base tracking-tight text-[#1F1F23] mt-0.5">
+            <h1 className="font-bold text-base tracking-tight text-[#1F1F23] mt-0.5 truncate">
               {settings?.name || "Clínica & Reservas"}
             </h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Staff selector: Full selector for Owner/Admin, locked badge for Provider */}
           {isOwnerAdmin ? (
-            <div className="flex items-center gap-1.5 bg-zinc-100 border border-zinc-300 rounded-full px-3 py-1.5">
-              <span className="text-[10px] uppercase font-bold text-zinc-500 hidden sm:inline">Agenda:</span>
+            <div className="flex items-center gap-1.5 bg-zinc-100 border border-zinc-300 rounded-full px-3 py-1.5 w-full sm:w-auto">
+              <span className="text-[10px] uppercase font-bold text-zinc-500 whitespace-nowrap">Agenda:</span>
               <select
                 value={selectedStaffId}
                 onChange={(e) => setSelectedStaffId(e.target.value)}
                 aria-label="Seleccionar profesional"
-                className="text-xs font-bold bg-transparent text-[#1F1F23] focus:outline-none cursor-pointer"
+                className="text-base sm:text-xs font-bold bg-transparent text-[#1F1F23] focus:outline-none cursor-pointer flex-1 min-w-0"
               >
                 <option value="ALL">👥 Todo el equipo</option>
                 {staffList.map((s: any) => (
@@ -1240,9 +1242,9 @@ Al ingresar con tu correo de Google podrás:
               </select>
             </div>
           ) : (
-            <div className="text-xs font-bold bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-full px-3 py-1.5 flex items-center gap-1.5">
-              <Stethoscope className="w-3.5 h-3.5 text-emerald-700" />
-              <span>
+            <div className="text-xs font-bold bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-full px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+              <Stethoscope className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <span className="truncate">
                 {staffList.find((s: any) => s.id === selectedStaffId)
                   ?.displayName || currentUser?.name}
               </span>
@@ -1303,11 +1305,18 @@ Al ingresar con tu correo de Google podrás:
               now,
             });
             const isClosedDay = agendaStatus.isDayClosedAlready;
-            const closedTag = agendaStatus.isPastDate
-              ? "Fecha pasada"
-              : !agendaStatus.hasShiftsOnDay
-              ? "Sin atención"
-              : `Cerró ${agendaStatus.latestEndStr}`;
+            const closedTag =
+              agendaStatus.closedBadge ||
+              (agendaStatus.isPastDate
+                ? "Fecha pasada"
+                : !agendaStatus.hasShiftsOnDay
+                ? "Sin atención"
+                : `Cerró ${agendaStatus.latestEndStr}`);
+            const isVacationBtnDisabled =
+              agendaStatus.closureCode === "VACATION" ||
+              agendaStatus.closureCode === "FULL_DAY_OFF" ||
+              agendaStatus.closureCode === "STAFF_PAUSED" ||
+              agendaStatus.closureCode === "PARTIAL_BLOCKS_CLOSED";
             const openDoctorsToday = isOwnerAdmin
               ? staffList.filter(
                   (st: any) =>
@@ -1418,6 +1427,8 @@ Al ingresar con tu correo de Google podrás:
 
                   <button
                     type="button"
+                    disabled={isVacationBtnDisabled}
+                    title={isVacationBtnDisabled ? agendaStatus.reason : undefined}
                     onClick={() =>
                       setVacationModal({
                         open: true,
@@ -1426,14 +1437,20 @@ Al ingresar con tu correo de Google podrás:
                           ? formatLocalDateYYYYMMDD(now)
                           : agendaDateStr,
                         endDate: "",
-                        reason: "Vacaciones programadas",
+                        reason: "",
                       })
                     }
-                    className="p-2.5 rounded-2xl bg-white border border-amber-300 text-zinc-800 text-left hover:border-zinc-800 transition-all shadow-sm"
+                    className={`p-2.5 rounded-2xl border text-left transition-all ${
+                      isVacationBtnDisabled
+                        ? "bg-zinc-50 border-zinc-200 text-zinc-400 opacity-60 cursor-not-allowed"
+                        : "bg-white border-amber-300 text-zinc-800 hover:border-zinc-800 shadow-sm"
+                    }`}
                   >
-                    <div className="text-sm leading-none mb-1">🏖️</div>
+                    <div className={`text-sm leading-none mb-1 ${isVacationBtnDisabled ? "grayscale opacity-60" : ""}`}>🏖️</div>
                     <div className="text-xs font-bold leading-tight">Vacaciones</div>
-                    <div className="text-[10px] text-amber-700 font-semibold">Rango de fechas</div>
+                    <div className={`text-[10px] font-semibold ${isVacationBtnDisabled ? "text-zinc-400" : "text-amber-700"}`}>
+                      {isVacationBtnDisabled ? closedTag : "Rango de fechas"}
+                    </div>
                   </button>
                 </div>
 
@@ -1469,7 +1486,7 @@ Al ingresar con tu correo de Google podrás:
                   type="date"
                   value={agendaDateStr}
                   onChange={(e) => setAgendaDateStr(e.target.value)}
-                  className="font-bold text-sm bg-zinc-100 px-3 py-1.5 rounded-xl border border-zinc-300 text-zinc-800 focus:outline-none"
+                  className="font-bold text-base sm:text-sm bg-zinc-100 px-3 py-1.5 rounded-xl border border-zinc-300 text-zinc-800 focus:outline-none"
                 />
 
                 {(() => {
@@ -1499,48 +1516,86 @@ Al ingresar con tu correo de Google podrás:
                         .sort((a: any, b: any) => a.startTime.localeCompare(b.startTime))
                     : [];
 
-                  const scheduleText = isAll
+                  const baseScheduleText = isAll
                     ? dayStatus.hasShiftsOnDay
-                      ? `${dayStatus.earliestStartStr} - ${dayStatus.latestEndStr}`
+                      ? `${dayStatus.baseEarliestStartStr || dayStatus.earliestStartStr} - ${dayStatus.baseLatestEndStr || dayStatus.latestEndStr}`
                       : "Sin atención"
                     : dayShifts.length > 0
                     ? dayShifts.map((s: any) => `${s.startTime} - ${s.endTime}`).join(" · ")
                     : "Sin atención";
 
+                  const scheduleText = dayStatus.hasPartialBlockOnDay
+                    ? `${dayStatus.earliestStartStr} - ${dayStatus.latestEndStr}`
+                    : baseScheduleText;
+
                   const hasHours = isAll ? dayStatus.hasShiftsOnDay : dayShifts.length > 0;
+                  const isBlockedByVacationOrDayOff =
+                    dayStatus.closureCode === "VACATION" ||
+                    dayStatus.closureCode === "FULL_DAY_OFF" ||
+                    dayStatus.closureCode === "PARTIAL_BLOCKS_CLOSED" ||
+                    dayStatus.closureCode === "STAFF_PAUSED";
                   const showClosedTodayTag =
-                    dayStatus.isToday && dayStatus.hasShiftsOnDay && dayStatus.isDayClosedAlready;
+                    !isBlockedByVacationOrDayOff &&
+                    dayStatus.isToday &&
+                    dayStatus.hasShiftsOnDay &&
+                    dayStatus.isDayClosedAlready;
 
                   return (
                     <div
                       data-testid="agenda-day-schedule"
                       className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs transition-all ${
-                        !hasHours
+                        isBlockedByVacationOrDayOff
+                          ? "bg-red-50 border-red-200 text-red-900"
+                          : !hasHours
                           ? "bg-zinc-50 border-zinc-200 text-zinc-500"
-                          : showClosedTodayTag
+                          : showClosedTodayTag || dayStatus.hasPartialBlockOnDay
                           ? "bg-amber-50 border-amber-200 text-amber-900"
                           : "bg-emerald-50/70 border-emerald-200 text-emerald-950"
                       }`}
                     >
                       <Clock
                         className={`w-3.5 h-3.5 flex-shrink-0 ${
-                          !hasHours
+                          isBlockedByVacationOrDayOff
+                            ? "text-red-600"
+                            : !hasHours
                             ? "text-zinc-400"
-                            : showClosedTodayTag
+                            : showClosedTodayTag || dayStatus.hasPartialBlockOnDay
                             ? "text-amber-600"
                             : "text-emerald-700"
                         }`}
                       />
-                      <span className="font-semibold">
-                        {isAll ? "Equipo: " : "Atención: "}
-                        <span className="font-extrabold">{scheduleText}</span>
-                      </span>
+                      {isBlockedByVacationOrDayOff ? (
+                        <span className="font-semibold flex items-center gap-1.5 flex-wrap">
+                          <span className="font-extrabold">
+                            {dayStatus.closureCode === "VACATION"
+                              ? "🏖️ En vacaciones programadas"
+                              : dayStatus.closureCode === "STAFF_PAUSED"
+                              ? "🏖️ Agenda en pausa"
+                              : "⛔ Día cerrado por bloqueo"}
+                          </span>
+                          {hasHours && (
+                            <span className="text-[11px] font-medium text-red-700/80">
+                              (Turno habitual: {baseScheduleText})
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="font-semibold">
+                          {isAll ? "Equipo: " : "Atención: "}
+                          <span className="font-extrabold">{scheduleText}</span>
+                        </span>
+                      )}
+                      {dayStatus.hasPartialBlockOnDay && !isBlockedByVacationOrDayOff && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                          Horario ajustado
+                        </span>
+                      )}
                       {showClosedTodayTag && (
                         <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
                           Ya cerró
                         </span>
                       )}
-                      {focusedStaff && (
+                      {focusedStaff && !isBlockedByVacationOrDayOff && (
                         <button
                           type="button"
                           onClick={() => openShiftsEditor(focusedStaff, dayOfWeek)}
@@ -1654,7 +1709,9 @@ Al ingresar con tu correo de Google podrás:
                         <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
                         <div>
                           <div className="font-bold text-red-950">
-                            {isFullDay
+                            {to.type === "VACATION"
+                              ? `🏖️ Vacaciones programadas (${agendaDateStr})`
+                              : isFullDay
                               ? `⛔ Día cerrado (${agendaDateStr})`
                               : `⏳ Horario bloqueado: ${s.toLocaleTimeString([], {
                                   hour: "2-digit",
@@ -1665,7 +1722,7 @@ Al ingresar con tu correo de Google podrás:
                                 })}`}
                           </div>
                           <div className="text-[11px] text-red-800 mt-0.5">
-                            Motivo: <b>{to.reason || "Imprevisto de agenda"}</b>
+                            Motivo: <b>{to.reason || (to.type === "VACATION" ? "Vacaciones programadas" : "Imprevisto de agenda")}</b>
                           </div>
                         </div>
                       </div>
@@ -1967,12 +2024,26 @@ Al ingresar con tu correo de Google podrás:
                             rel="noreferrer"
                             className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 font-semibold"
                           >
-                            <MessageCircle className="w-3.5 h-3.5" />
+                            <WhatsAppIcon className="w-3.5 h-3.5" />
                             <span>WhatsApp</span>
                           </a>
                         </div>
                       )}
                     </div>
+
+                    {apt.customerNotes && (
+                      <div className="p-2.5 rounded-2xl bg-sky-50/80 border border-sky-200 text-xs text-sky-950 flex items-start gap-2">
+                        <FileText className="w-3.5 h-3.5 text-sky-700 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-sky-800 block">
+                            Nota / detalle del cliente:
+                          </span>
+                          <p className="text-xs text-zinc-800 break-words leading-snug mt-0.5">
+                            {apt.customerNotes}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Actions for Doctor */}
                     <div className="pt-2 border-t border-zinc-100 flex items-center justify-end gap-2 flex-wrap">
@@ -2010,7 +2081,7 @@ Al ingresar con tu correo de Google podrás:
                             className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
                             title="Cancela la cita y abre WhatsApp con el mensaje listo"
                           >
-                            <MessageCircle className="w-3.5 h-3.5" />
+                            <WhatsAppIcon className="w-3.5 h-3.5" />
                             <span>Cancelar y avisar</span>
                           </button>
                         </>
@@ -2045,7 +2116,7 @@ Al ingresar con tu correo de Google podrás:
                               rel="noreferrer"
                               className="px-3 py-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1"
                             >
-                              <MessageCircle className="w-3.5 h-3.5" />
+                              <WhatsAppIcon className="w-3.5 h-3.5" />
                               <span>WhatsApp</span>
                             </a>
                             <button
@@ -2068,7 +2139,7 @@ Al ingresar con tu correo de Google podrás:
                           className="px-3 py-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
                           title="Avisar al cliente por WhatsApp con mensaje pre-redactado"
                         >
-                          <MessageCircle className="w-3.5 h-3.5" />
+                          <WhatsAppIcon className="w-3.5 h-3.5" />
                           <span>Avisar por WhatsApp</span>
                         </a>
                       )}
@@ -2108,7 +2179,7 @@ Al ingresar con tu correo de Google podrás:
                     setSelectedStaffId(e.target.value);
                     setIsEditingShifts(false);
                   }}
-                  className="text-xs font-bold bg-zinc-100 border border-zinc-300 text-zinc-800 rounded-full px-3 py-1.5 focus:outline-none"
+                  className="text-base sm:text-xs font-bold bg-zinc-100 border border-zinc-300 text-zinc-800 rounded-full px-3 py-1.5 focus:outline-none max-w-full"
                   title="Cambiar profesional para editar sus horarios"
                 >
                   {staffList.map((s: any) => (
@@ -2238,7 +2309,7 @@ Al ingresar con tu correo de Google podrás:
                     staffId: selectedStaff?.id || selectedStaffId,
                     startDate: "",
                     endDate: "",
-                    reason: "Vacaciones",
+                    reason: "",
                   })
                 }
                 className="flex-shrink-0 px-4 py-2 rounded-full bg-[#1F1F23] hover:bg-black text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5"
@@ -2328,76 +2399,6 @@ Al ingresar con tu correo de Google podrás:
             })()}
           </div>
 
-          {/* Servicios asignados a este profesional (1-Clic para habilitar o bloquear) */}
-          {selectedStaff && (
-            <div className="p-4 rounded-2xl border border-zinc-200 bg-white space-y-2.5 text-xs">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <h3 className="font-bold text-zinc-900 text-xs flex items-center gap-1.5">
-                    <Stethoscope className="w-4 h-4 text-zinc-700" />
-                    <span>
-                      Servicios que realiza {selectedStaff.displayName} (
-                      {getAssignedServiceIdsForStaff(selectedStaff).length} de {services.length})
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-zinc-500 mt-0.5">
-                    Haz clic en un servicio para habilitarlo o bloquearlo en tu agenda de citas.
-                  </p>
-                </div>
-                {getAssignedServiceIdsForStaff(selectedStaff).length < services.length && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleSetAllStaffServices(
-                        selectedStaff,
-                        services.map((s: any) => s.id)
-                      )
-                    }
-                    className="px-3 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all"
-                  >
-                    Habilitar todos
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                {services.map((svc: any) => {
-                  const isAssigned = getAssignedServiceIdsForStaff(selectedStaff).includes(svc.id);
-                  return (
-                    <button
-                      key={svc.id}
-                      type="button"
-                      onClick={() => handleToggleStaffService(selectedStaff, svc)}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all flex items-center gap-1.5 active:scale-95 ${
-                        isAssigned
-                          ? "bg-[#1F1F23] text-white shadow-2xs hover:bg-black"
-                          : "bg-zinc-100 text-zinc-500 border border-dashed border-zinc-300 hover:text-zinc-800 hover:border-zinc-400"
-                      }`}
-                      title={
-                        isAssigned
-                          ? `Clic para dejar de atender "${svc.name}"`
-                          : `Clic para habilitar "${svc.name}"`
-                      }
-                    >
-                      <span>{isAssigned ? "✓" : "○"}</span>
-                      <span>{svc.name}</span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                          isAssigned
-                            ? "bg-white/15 text-zinc-200"
-                            : "bg-zinc-200/80 text-zinc-500"
-                        }`}
-                      >
-                        {settings?.currencySymbol || "$"}
-                        {svc.price}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* Banner de Edición Activa */}
           {isEditingShifts && (
             <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900 animate-in fade-in">
@@ -2430,7 +2431,7 @@ Al ingresar con tu correo de Google podrás:
                   <select
                     value={editingHorizonDays}
                     onChange={(e) => setEditingHorizonDays(Number(e.target.value))}
-                    className="w-full text-xs font-semibold bg-zinc-50 border border-zinc-300 rounded-lg p-2 focus:outline-none"
+                    className="w-full text-base sm:text-xs font-semibold bg-zinc-50 border border-zinc-300 rounded-lg p-2 focus:outline-none"
                   >
                     <option value={3}>3 días hacia adelante</option>
                     <option value={7}>7 días (1 semana - Recomendado)</option>
@@ -2459,7 +2460,7 @@ Al ingresar con tu correo de Google podrás:
                   <select
                     value={editingLeadTimeMin}
                     onChange={(e) => setEditingLeadTimeMin(Number(e.target.value))}
-                    className="w-full text-xs font-semibold bg-zinc-50 border border-zinc-300 rounded-lg p-2 focus:outline-none"
+                    className="w-full text-base sm:text-xs font-semibold bg-zinc-50 border border-zinc-300 rounded-lg p-2 focus:outline-none"
                   >
                     <option value={0}>Sin anticipación (En cualquier momento / Inmediato - 0 min)</option>
                     <option value={15}>15 minutos antes (Urgencias / Rápido)</option>
@@ -2610,8 +2611,8 @@ Al ingresar con tu correo de Google podrás:
                       : "bg-zinc-50/70 border-zinc-200 opacity-80"
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-zinc-900 text-sm">{d.name}</span>
                       <button
                         type="button"
@@ -2695,7 +2696,7 @@ Al ingresar con tu correo de Google podrás:
                                   onChange={(e) =>
                                     handleUpdateShiftTime(shift.tempId, "startTime", e.target.value)
                                   }
-                                  className={`rounded-lg px-2 py-1 font-bold text-xs focus:outline-none transition-all ${
+                                  className={`rounded-lg px-2 py-1 font-bold text-base sm:text-xs focus:outline-none transition-all ${
                                     hasShiftError
                                       ? "bg-white border-2 border-red-500 text-red-900"
                                       : "bg-white border border-zinc-300 text-zinc-800"
@@ -2712,7 +2713,7 @@ Al ingresar con tu correo de Google podrás:
                                   onChange={(e) =>
                                     handleUpdateShiftTime(shift.tempId, "endTime", e.target.value)
                                   }
-                                  className={`rounded-lg px-2 py-1 font-bold text-xs focus:outline-none transition-all ${
+                                  className={`rounded-lg px-2 py-1 font-bold text-base sm:text-xs focus:outline-none transition-all ${
                                     hasShiftError
                                       ? "bg-white border-2 border-red-500 text-red-900"
                                       : "bg-white border border-zinc-300 text-zinc-800"
@@ -2842,28 +2843,6 @@ Al ingresar con tu correo de Google podrás:
               <Plus className="w-3.5 h-3.5" />
               <span>Agregar Profesional</span>
             </button>
-          </div>
-
-          {/* Explicación de Arquitectura Real de Negocio */}
-          <div className="p-3.5 rounded-3xl bg-zinc-100 border border-zinc-200 text-xs space-y-2">
-            <div className="font-bold text-zinc-900 flex items-center gap-1.5">
-              <Shield className="w-4 h-4 text-zinc-900" />
-              <span>¿Cómo funciona el control de cuentas en un negocio real?</span>
-            </div>
-            <div className="grid sm:grid-cols-2 gap-2 text-[11px] text-zinc-700">
-              <div className="p-2.5 rounded-2xl bg-white border border-zinc-200">
-                <div className="font-bold text-zinc-900 mb-0.5">
-                  👑 1. Dueño / Admin Principal
-                </div>
-                Control total de la empresa: cambia el <b>logo, nombre del local, dirección, mapa, precios</b> y autoriza o revoca cuentas del personal.
-              </div>
-              <div className="p-2.5 rounded-2xl bg-white border border-zinc-200">
-                <div className="font-bold text-emerald-900 mb-0.5">
-                  🩺 2. Colaborador / {settings?.staffLabel || "Profesional"}
-                </div>
-                Ingresa con su <b>correo Google autorizado</b> y solo ve <b>su propia agenda</b> y <b>sus horarios/imprevistos</b>. No puede tocar datos de la empresa.
-              </div>
-            </div>
           </div>
 
           {/* Lista de Profesionales */}
@@ -3061,7 +3040,7 @@ Al ingresar con tu correo de Google podrás:
                         rel="noreferrer"
                         className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs transition-all"
                       >
-                        <MessageCircle className="w-3.5 h-3.5" />
+                        <WhatsAppIcon className="w-3.5 h-3.5" />
                         <span>Enviar invitación WhatsApp</span>
                       </a>
 
@@ -3095,7 +3074,7 @@ Al ingresar con tu correo de Google podrás:
                             staffId: st.id,
                             startDate: "",
                             endDate: "",
-                            reason: "Vacaciones programadas",
+                            reason: "",
                           })
                         }
                         className="px-3 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all shadow-2xs"
@@ -3125,7 +3104,7 @@ Al ingresar con tu correo de Google podrás:
       {/* TAB 3: SERVICIOS & PRECIOS */}
       {activeTab === "services" && isOwnerAdmin && (
         <div className="p-4 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className="text-sm font-bold text-zinc-700 uppercase tracking-wider">
               Catálogo de Servicios ({services.length})
             </h2>
@@ -3140,7 +3119,7 @@ Al ingresar con tu correo de Google podrás:
                   staffIds: staffList.map((s: any) => s.id),
                 })
               }
-              className="px-3 py-1.5 rounded-full bg-[#1F1F23] text-white text-xs font-semibold flex items-center gap-1 shadow-sm"
+              className="px-3.5 min-h-[36px] rounded-full bg-[#1F1F23] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm whitespace-nowrap"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Nuevo Servicio</span>
@@ -3253,16 +3232,16 @@ Al ingresar con tu correo de Google podrás:
       {/* TAB 4: CLIENTES & ANTI-TROLLS */}
       {activeTab === "customers" && isOwnerAdmin && (
         <div className="p-4 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-bold text-zinc-700 uppercase tracking-wider">
                 Control de Clientes y Faltas
               </h2>
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
                 Al acumular 2 inasistencias se bloquean automáticamente. Al reiniciar faltas, las anteriores pasan al archivo histórico.
               </p>
             </div>
-            <span className="text-[11px] text-zinc-400">
+            <span className="text-[11px] font-semibold text-zinc-500 bg-zinc-100 px-2.5 py-0.5 rounded-full self-start sm:self-auto whitespace-nowrap shrink-0">
               {allUsers.length} registrados
             </span>
           </div>
@@ -3310,8 +3289,8 @@ Al ingresar con tu correo de Google podrás:
                       : "bg-white border-zinc-200 shadow-sm"
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs">
-                    <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <div className="min-w-0">
                       <div className="font-bold text-sm text-zinc-900 flex items-center gap-1.5 flex-wrap">
                         <span>{u.name}</span>
                         {u.isBlocked && (
@@ -3325,13 +3304,13 @@ Al ingresar con tu correo de Google podrás:
                           </span>
                         )}
                       </div>
-                      <div className="text-zinc-500 text-[11px] mt-0.5">
+                      <div className="text-zinc-500 text-[11px] mt-0.5 break-words">
                         {u.email} {u.phone ? `• ${u.phone}` : "• Sin teléfono"}
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <div className="text-[11px] text-zinc-600">
+                    <div className="sm:text-right shrink-0">
+                      <div className="text-[11px] text-zinc-600 whitespace-nowrap">
                         Asistidas: <b className="text-emerald-700">{u.completedCount || 0}</b> | Faltas vigentes:{" "}
                         <b className={(u.noShowCount || 0) > 0 ? "text-amber-700" : "text-zinc-600"}>
                           {u.noShowCount || 0}/2
@@ -3357,7 +3336,7 @@ Al ingresar con tu correo de Google podrás:
                             rel="noreferrer"
                             className="px-2.5 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-semibold flex items-center gap-1"
                           >
-                            <MessageCircle className="w-3 h-3" />
+                            <WhatsAppIcon className="w-3.5 h-3.5" />
                             <span>WhatsApp</span>
                           </a>
                         </>
@@ -3398,7 +3377,7 @@ Al ingresar con tu correo de Google podrás:
       {/* TAB 5: AJUSTES TEMPLATE WHITE-LABEL */}
       {activeTab === "settings" && isOwnerAdmin && (
         <div className="p-4 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div>
               <h2 className="text-sm font-bold text-zinc-700 uppercase tracking-wider">
                 Ajustes del Negocio y Marca
@@ -3410,7 +3389,7 @@ Al ingresar con tu correo de Google podrás:
             <button
               onClick={handleSaveSettings}
               disabled={savingSettings}
-              className="px-4 py-2 rounded-full bg-[#1F1F23] text-white text-xs font-semibold flex items-center gap-1.5 shadow-md hover:bg-black"
+              className="self-start sm:self-auto px-4 min-h-[38px] py-2 rounded-full bg-[#1F1F23] text-white text-xs font-semibold flex items-center gap-1.5 shadow-md hover:bg-black whitespace-nowrap shrink-0"
             >
               <Save className="w-3.5 h-3.5" />
               <span>{savingSettings ? "Guardando..." : "Guardar Cambios"}</span>
@@ -3516,7 +3495,7 @@ Al ingresar con tu correo de Google podrás:
                     setSettingsForm({ ...settingsForm, logoUrl: e.target.value })
                   }
                   placeholder="https://..."
-                  className="mt-1 w-full bg-white border border-zinc-300 rounded-xl px-3 py-1.5 text-xs text-zinc-800 focus:outline-none"
+                  className="mt-1 w-full bg-white border border-zinc-300 rounded-xl px-3 py-2 text-base sm:text-xs text-zinc-800 focus:outline-none"
                 />
               </div>
             </div>
@@ -3531,7 +3510,7 @@ Al ingresar con tu correo de Google podrás:
                 onChange={(e) =>
                   setSettingsForm({ ...settingsForm, name: e.target.value })
                 }
-                className="bg-transparent font-semibold text-sm text-[#1F1F23] focus:outline-none w-full"
+                className="bg-transparent font-semibold text-base sm:text-sm text-[#1F1F23] focus:outline-none w-full"
               />
             </div>
 
@@ -3545,11 +3524,11 @@ Al ingresar con tu correo de Google podrás:
                 onChange={(e) =>
                   setSettingsForm({ ...settingsForm, tagline: e.target.value })
                 }
-                className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="border-[1.5px] border-zinc-300 bg-[#F4F4F6] rounded-2xl px-4 py-2">
                 <label className="text-[10px] font-bold text-zinc-500 uppercase block">
                   Etiqueta de Profesionales
@@ -3561,7 +3540,7 @@ Al ingresar con tu correo de Google podrás:
                     setSettingsForm({ ...settingsForm, staffLabel: e.target.value })
                   }
                   placeholder="Doctor(a) / Barbero"
-                  className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                  className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full"
                 />
               </div>
 
@@ -3578,7 +3557,7 @@ Al ingresar con tu correo de Google podrás:
                       currencySymbol: e.target.value,
                     })
                   }
-                  className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                  className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full"
                 />
               </div>
             </div>
@@ -3593,7 +3572,7 @@ Al ingresar con tu correo de Google podrás:
                 onChange={(e) =>
                   setSettingsForm({ ...settingsForm, addressText: e.target.value })
                 }
-                className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full"
               />
             </div>
 
@@ -3639,7 +3618,7 @@ Al ingresar con tu correo de Google podrás:
                     })
                   }
                   placeholder="https://www.google.com/maps/search/?api=1&query=..."
-                  className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                  className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full"
                 />
               </div>
             </div>
@@ -3657,7 +3636,7 @@ Al ingresar con tu correo de Google podrás:
                     phoneWhatsapp: e.target.value,
                   })
                 }
-                className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full"
               />
             </div>
 
@@ -3689,7 +3668,7 @@ Al ingresar con tu correo de Google podrás:
                         bookingHorizonDays: Number(e.target.value),
                       })
                     }
-                    className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                    className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full"
                   />
                   <span className="text-[10px] text-zinc-400 block mt-0.5">
                     Anticipación máxima por defecto
@@ -3708,7 +3687,7 @@ Al ingresar con tu correo de Google podrás:
                         minLeadTimeMinutes: Number(e.target.value),
                       })
                     }
-                    className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full cursor-pointer"
+                    className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full cursor-pointer"
                   >
                     <option value={0}>0 min (Inmediato / En cualquier momento)</option>
                     <option value={15}>15 minutos antes</option>
@@ -3737,11 +3716,79 @@ Al ingresar con tu correo de Google podrás:
                         minCancelNoticeHours: Number(e.target.value),
                       })
                     }
-                    className="bg-transparent font-medium text-xs text-[#1F1F23] focus:outline-none w-full"
+                    className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full"
                   />
                   <span className="text-[10px] text-zinc-400 block mt-0.5">
                     Regla global para cancelar sin falta
                   </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Vista Previa Automática en Google, Favicons y WhatsApp (SEO / Open Graph) */}
+            <div className="p-4.5 bg-zinc-50 border border-zinc-200 rounded-3xl space-y-3.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h4 className="text-xs font-bold text-zinc-900 uppercase tracking-wider">
+                    SEO en Google y Tarjeta Open Graph (WhatsApp)
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 mt-0.5">
+                    Sincronizado automáticamente con tu logo, nombre, servicios y ubicación guardados.
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                  Indexación Activa ✓
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Google Search Snippet Preview */}
+                <div className="bg-white rounded-2xl border border-zinc-200 p-3.5 space-y-1.5 shadow-2xs">
+                  <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                    Vista previa en Google
+                  </div>
+                  <div className="flex items-center gap-2 pt-0.5">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- Direct preview of dynamic generated favicon endpoint */}
+                    <img
+                      src={`/icon/48?v=${settings?.updatedAt ? new Date(settings.updatedAt).getTime() : 1}`}
+                      alt="Favicon"
+                      className="w-5 h-5 rounded-md border border-zinc-200 object-cover"
+                    />
+                    <span className="text-[11px] text-zinc-600 truncate">
+                      {settingsForm?.name || "Clínica Dental"}
+                    </span>
+                  </div>
+                  <div className="text-sm font-semibold text-[#1a0dab] leading-snug line-clamp-1">
+                    {`${settingsForm?.name || "Clínica Dental"} | Reserva tu Cita Online`}
+                  </div>
+                  <p className="text-[11px] text-zinc-600 leading-relaxed line-clamp-2">
+                    {`${settingsForm?.tagline || "Reserva tu cita en línea en segundos"}. Agenda tu turno con confirmación inmediata en ${settingsForm?.addressText || "tu ciudad"}.`}
+                  </p>
+                </div>
+
+                {/* WhatsApp Open Graph Card Preview */}
+                <div className="bg-white rounded-2xl border border-zinc-200 p-3 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                      Tarjeta WhatsApp (Open Graph 1200×630)
+                    </span>
+                    <a
+                      href={`/opengraph-image?v=${settings?.updatedAt ? new Date(settings.updatedAt).getTime() : 1}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[10px] font-bold text-emerald-700 hover:underline"
+                    >
+                      Abrir imagen ↗
+                    </a>
+                  </div>
+                  <div className="rounded-xl overflow-hidden border border-zinc-200 bg-zinc-900">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- Direct preview of dynamic generated 1200x630 Open Graph PNG */}
+                    <img
+                      src={`/opengraph-image?v=${settings?.updatedAt ? new Date(settings.updatedAt).getTime() : 1}`}
+                      alt="Vista previa Open Graph para WhatsApp"
+                      className="w-full h-auto block"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -3788,8 +3835,8 @@ Al ingresar con tu correo de Google podrás:
             : [];
 
         return (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl relative">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-[32px] p-5 sm:p-6 max-w-sm w-full shadow-2xl relative max-h-[92dvh] overflow-y-auto">
               <h3 className="text-base font-bold text-zinc-900">
                 {imprevistoModal.type === "LATE_START" && "🌅 Entrar más tarde hoy"}
                 {imprevistoModal.type === "EARLY_LEAVE" && "🎂 Salir antes / Cumpleaños"}
@@ -3865,15 +3912,23 @@ Al ingresar con tu correo de Google podrás:
                           ),
                         });
                       }}
-                      className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-xs bg-white focus:outline-none cursor-pointer"
+                      className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-base sm:text-xs bg-white focus:outline-none cursor-pointer"
                     >
                       {staffList.map((st: any) => {
                         const stCount = activeDateAptsAllStaff.filter(
                           (a: any) => a.staffId === st.id
                         ).length;
+                        const stDayStatus = getDayScheduleStatus({
+                          dateStr: agendaDateStr,
+                          targets: [st],
+                          now,
+                        });
+                        const stClosedNote = stDayStatus.isDayClosedAlready
+                          ? ` · ${stDayStatus.closedBadge || "Cerrado"}`
+                          : "";
                         return (
                           <option key={st.id} value={st.id}>
-                            {st.displayName} ({stCount} cita{stCount === 1 ? "" : "s"} hoy)
+                            {st.displayName} ({stCount} cita{stCount === 1 ? "" : "s"} hoy{stClosedNote})
                           </option>
                         );
                       })}
@@ -3956,7 +4011,7 @@ Al ingresar con tu correo de Google podrás:
                           timeStr: e.target.value,
                         })
                       }
-                      className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-sm disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
+                      className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-base sm:text-sm disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
                     />
                     {modalValidation.status.hasShiftsOnDay && !modalValidation.status.isDayClosedAlready && (
                       <span className="text-[10px] text-zinc-400 block mt-1">
@@ -3981,7 +4036,7 @@ Al ingresar con tu correo de Google podrás:
                       })
                     }
                     placeholder="Ej. Cumpleaños / Trámite personal"
-                    className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-xs font-medium disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
+                    className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-base sm:text-xs font-medium disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -4026,8 +4081,8 @@ Al ingresar con tu correo de Google podrás:
 
       {/* CONFLICT DETECTED MODAL */}
       {conflictData?.open && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl border-2 border-amber-500">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-[32px] p-5 sm:p-6 max-w-sm w-full shadow-2xl border-2 border-amber-500 max-h-[92dvh] overflow-y-auto">
             <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-2">
               <AlertTriangle className="w-6 h-6" />
             </div>
@@ -4049,6 +4104,11 @@ Al ingresar con tu correo de Google podrás:
                   <div className="text-[11px] text-zinc-500">
                     Hora: {new Date(c.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} • Tel: {c.customer?.phone}
                   </div>
+                  {c.customerNotes && (
+                    <div className="mt-1 text-[11px] text-sky-900 bg-sky-50 border border-sky-200 rounded-lg px-2 py-1 break-words">
+                      <b>Nota:</b> {c.customerNotes}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -4095,126 +4155,152 @@ Al ingresar con tu correo de Google podrás:
       )}
 
       {/* VACATION DATE RANGE MODAL */}
-      {vacationModal.open && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl relative border border-zinc-200">
-            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center mx-auto mb-2 text-2xl">
-              🏖️
-            </div>
-            <h3 className="text-base font-bold text-center text-zinc-900">
-              Programar Vacaciones o Receso
-            </h3>
-            <p className="text-xs text-zinc-500 text-center mt-1">
-              Selecciona el rango de fechas. El sistema bloqueará automáticamente nuevas reservas en ese periodo, mientras sigues atendiendo con normalidad hoy.
-            </p>
+      {vacationModal.open && (() => {
+        const vacTargetId = vacationModal.staffId || selectedStaffId;
+        const vacTargets = resolveOverrideTargets(vacTargetId);
+        const hasBothDates = Boolean(vacationModal.startDate && vacationModal.endDate);
+        const vacCheck = validateVacationRange({
+          startDate: vacationModal.startDate,
+          endDate: vacationModal.endDate || vacationModal.startDate,
+          targets: vacTargets,
+          now: new Date(),
+        });
+        const canSubmitVacation = hasBothDates && vacCheck.valid;
 
-            <div className="mt-4 space-y-3 text-xs">
-              {/* Doctor / Staff selection if Admin */}
-              {isOwnerAdmin && staffList.length > 1 && (
-                <div>
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
-                    Profesional
-                  </label>
-                  <select
-                    value={vacationModal.staffId || selectedStaffId}
-                    onChange={(e) =>
-                      setVacationModal({ ...vacationModal, staffId: e.target.value })
-                    }
-                    className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-xs bg-white focus:outline-none"
-                  >
-                    {staffList.map((st: any) => (
-                      <option key={st.id} value={st.id}>
-                        {st.displayName} ({st.specialtyTitle || "Especialista"})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
-                    Desde (Inicio)
-                  </label>
-                  <input
-                    type="date"
-                    value={vacationModal.startDate}
-                    onChange={(e) =>
-                      setVacationModal({ ...vacationModal, startDate: e.target.value })
-                    }
-                    className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-xs focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
-                    Hasta (Retorno)
-                  </label>
-                  <input
-                    type="date"
-                    min={vacationModal.startDate}
-                    value={vacationModal.endDate}
-                    onChange={(e) =>
-                      setVacationModal({ ...vacationModal, endDate: e.target.value })
-                    }
-                    className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-xs focus:outline-none"
-                  />
-                </div>
+        return (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-[32px] p-5 sm:p-6 max-w-sm w-full shadow-2xl relative border border-zinc-200 max-h-[92dvh] overflow-y-auto">
+              <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center mx-auto mb-2 text-2xl">
+                🏖️
               </div>
+              <h3 className="text-base font-bold text-center text-zinc-900">
+                Programar Vacaciones o Receso
+              </h3>
+              <p className="text-xs text-zinc-500 text-center mt-1">
+                Selecciona el rango de fechas. El sistema bloqueará automáticamente nuevas reservas en ese periodo, mientras sigues atendiendo con normalidad hoy.
+              </p>
 
-              <div>
-                <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
-                  Motivo / Nota (Opcional)
-                </label>
-                <input
-                  type="text"
-                  value={vacationModal.reason}
-                  onChange={(e) =>
-                    setVacationModal({ ...vacationModal, reason: e.target.value })
-                  }
-                  placeholder="Ej. Vacaciones de verano / Viaje / Congreso"
-                  className="w-full p-2.5 rounded-2xl border border-zinc-300 text-xs focus:outline-none"
-                />
-              </div>
-
-              {vacationModal.startDate &&
-                vacationModal.endDate &&
-                vacationModal.startDate <= vacationModal.endDate && (
-                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 font-medium">
-                    🏖️ Se bloquearán{" "}
-                    {Math.ceil(
-                      (new Date(vacationModal.endDate).getTime() -
-                        new Date(vacationModal.startDate).getTime()) /
-                        (1000 * 60 * 60 * 24)
-                    ) + 1}{" "}
-                    días para reservas en línea.
+              <div className="mt-4 space-y-3 text-xs">
+                {vacationModal.startDate && !vacCheck.valid && (
+                  <div className="p-3 rounded-2xl bg-red-50 border border-red-300 text-xs text-red-900 space-y-1">
+                    <div className="font-bold flex items-center gap-1.5 text-red-800">
+                      <span>🔒 Rango no disponible</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed">{vacCheck.error}</p>
                   </div>
                 )}
-            </div>
 
-            <div className="mt-5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => handleScheduleVacation()}
-                className="flex-1 py-3 rounded-full bg-[#1F1F23] hover:bg-black text-white text-xs font-semibold transition-all shadow-sm"
-              >
-                Confirmar Vacaciones
-              </button>
-              <button
-                type="button"
-                onClick={() => setVacationModal((prev) => ({ ...prev, open: false }))}
-                className="py-3 px-4 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold transition-all"
-              >
-                Cancelar
-              </button>
+                {/* Doctor / Staff selection if Admin */}
+                {isOwnerAdmin && staffList.length > 1 && (
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
+                      Profesional
+                    </label>
+                    <select
+                      value={vacationModal.staffId || selectedStaffId}
+                      onChange={(e) =>
+                        setVacationModal({ ...vacationModal, staffId: e.target.value })
+                      }
+                      className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-base sm:text-xs bg-white focus:outline-none"
+                    >
+                      {staffList.map((st: any) => (
+                        <option key={st.id} value={st.id}>
+                          {st.displayName} ({st.specialtyTitle || "Especialista"})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
+                      Desde (Inicio)
+                    </label>
+                    <input
+                      type="date"
+                      min={formatLocalDateYYYYMMDD(new Date())}
+                      value={vacationModal.startDate}
+                      onChange={(e) =>
+                        setVacationModal({ ...vacationModal, startDate: e.target.value })
+                      }
+                      className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-base sm:text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
+                      Hasta (Retorno)
+                    </label>
+                    <input
+                      type="date"
+                      min={vacationModal.startDate || formatLocalDateYYYYMMDD(new Date())}
+                      value={vacationModal.endDate}
+                      onChange={(e) =>
+                        setVacationModal({ ...vacationModal, endDate: e.target.value })
+                      }
+                      className="w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-base sm:text-xs focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">
+                    Motivo / Nota (Opcional · visible para pacientes)
+                  </label>
+                  <input
+                    type="text"
+                    value={vacationModal.reason}
+                    onChange={(e) =>
+                      setVacationModal({ ...vacationModal, reason: e.target.value })
+                    }
+                    placeholder="Ej. Vacaciones de verano / Viaje / Congreso"
+                    className="w-full p-2.5 rounded-2xl border border-zinc-300 text-base sm:text-xs focus:outline-none"
+                  />
+                </div>
+
+                {hasBothDates &&
+                  vacCheck.valid &&
+                  vacationModal.startDate <= vacationModal.endDate && (() => {
+                    const totalDays =
+                      Math.ceil(
+                        (new Date(vacationModal.endDate).getTime() -
+                          new Date(vacationModal.startDate).getTime()) /
+                          (1000 * 60 * 60 * 24)
+                      ) + 1;
+                    return (
+                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 font-medium">
+                        🏖️ Se {totalDays === 1 ? "bloqueará 1 día" : `bloquearán ${totalDays} días`} para reservas en línea.
+                      </div>
+                    );
+                  })()}
+              </div>
+
+              <div className="mt-5 flex gap-2">
+                <button
+                  type="button"
+                  disabled={!canSubmitVacation}
+                  onClick={() => handleScheduleVacation()}
+                  className="flex-1 py-3 rounded-full bg-[#1F1F23] hover:bg-black text-white text-xs font-semibold transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Confirmar Vacaciones
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVacationModal((prev) => ({ ...prev, open: false }))}
+                  className="py-3 px-4 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold transition-all"
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* NEW / EDIT SERVICE MODAL */}
       {serviceModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-6 max-w-md w-full shadow-2xl relative max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-[32px] p-5 sm:p-6 max-w-md w-full shadow-2xl relative max-h-[92dvh] overflow-y-auto">
             <h3 className="text-base font-bold text-zinc-900">
               {serviceModal.id ? "Editar Servicio" : "Crear Nuevo Servicio"}
             </h3>
@@ -4236,7 +4322,7 @@ Al ingresar con tu correo de Google podrás:
                     setServiceModal({ ...serviceModal, name: e.target.value })
                   }
                   placeholder="Ej. Corte Fade + Barba"
-                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-semibold text-sm focus:outline-none"
+                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-semibold text-base sm:text-sm focus:outline-none"
                 />
               </div>
 
@@ -4254,7 +4340,7 @@ Al ingresar con tu correo de Google podrás:
                     })
                   }
                   placeholder="Detalle breve del servicio"
-                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-xs focus:outline-none"
+                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-base sm:text-xs focus:outline-none"
                 />
               </div>
 
@@ -4272,7 +4358,7 @@ Al ingresar con tu correo de Google podrás:
                         durationMin: Number(e.target.value),
                       })
                     }
-                    className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold focus:outline-none"
+                    className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-base sm:text-sm focus:outline-none"
                   />
                 </div>
                 <div>
@@ -4288,7 +4374,7 @@ Al ingresar con tu correo de Google podrás:
                         bufferAfterMin: Number(e.target.value),
                       })
                     }
-                    className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold focus:outline-none"
+                    className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-base sm:text-sm focus:outline-none"
                   />
                   <span className="text-[10px] text-zinc-400 block mt-1 leading-tight">
                     Usa 0 min para citas continuas (ej. 9:00 y 9:30).
@@ -4310,7 +4396,7 @@ Al ingresar con tu correo de Google podrás:
                       price: Number(e.target.value),
                     })
                   }
-                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-sm focus:outline-none"
+                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-base sm:text-sm focus:outline-none"
                 />
               </div>
 
@@ -4434,8 +4520,8 @@ Al ingresar con tu correo de Google podrás:
 
       {/* MODAL: AGREGAR Y AUTORIZAR NUEVO PROFESIONAL / DOCTOR */}
       {staffModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl relative border border-zinc-200 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-[32px] p-5 sm:p-6 max-w-sm w-full shadow-2xl relative border border-zinc-200 max-h-[92dvh] overflow-y-auto">
             <h3 className="text-base font-bold text-zinc-900">
               👨‍⚕️ Agregar Profesional al Equipo
             </h3>
@@ -4455,7 +4541,7 @@ Al ingresar con tu correo de Google podrás:
                     setStaffModal({ ...staffModal, displayName: e.target.value })
                   }
                   placeholder="Ej. Dr. Marcos Paz / Lic. Valeria"
-                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-semibold text-sm focus:outline-none"
+                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-semibold text-base sm:text-sm focus:outline-none"
                 />
               </div>
 
@@ -4470,7 +4556,7 @@ Al ingresar con tu correo de Google podrás:
                     setStaffModal({ ...staffModal, specialty: e.target.value })
                   }
                   placeholder="Ej. Ortodoncia y Rehabilitación"
-                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-xs font-medium focus:outline-none"
+                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-base sm:text-xs font-medium focus:outline-none"
                 />
               </div>
 
@@ -4485,7 +4571,7 @@ Al ingresar con tu correo de Google podrás:
                     setStaffModal({ ...staffModal, email: e.target.value })
                   }
                   placeholder="ejemplo@gmail.com"
-                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-xs font-semibold focus:outline-none"
+                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-base sm:text-xs font-semibold focus:outline-none"
                 />
                 <span className="text-[10px] text-zinc-500 block mt-0.5">
                   Con este correo ingresará a su panel de atención.
@@ -4503,7 +4589,7 @@ Al ingresar con tu correo de Google podrás:
                     setStaffModal({ ...staffModal, phone: e.target.value })
                   }
                   placeholder="+59170012345"
-                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-xs font-medium focus:outline-none"
+                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-base sm:text-xs font-medium focus:outline-none"
                 />
               </div>
 
@@ -4616,8 +4702,8 @@ Al ingresar con tu correo de Google podrás:
 
       {/* MODAL: REGISTRAR INASISTENCIA (NO SHOW) & LIMITES */}
       {noShowModalData && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl border-2 border-amber-400">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-[32px] p-5 sm:p-6 max-w-sm w-full shadow-2xl border-2 border-amber-400 max-h-[92dvh] overflow-y-auto">
             <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto mb-3 text-2xl font-bold">
               ⚠️
             </div>
@@ -4640,6 +4726,11 @@ Al ingresar con tu correo de Google podrás:
                   minute: "2-digit",
                 })}
               </div>
+              {noShowModalData.customerNotes && (
+                <div className="mt-1.5 p-2 rounded-xl bg-white border border-zinc-200 text-[11px] text-zinc-700 break-words">
+                  <b>Nota del cliente:</b> {noShowModalData.customerNotes}
+                </div>
+              )}
               <div className="mt-2 pt-2 border-t border-zinc-200 flex items-center justify-between">
                 <span className="text-zinc-500">Inasistencias registradas:</span>
                 <span className="font-bold text-amber-800">
@@ -4663,7 +4754,7 @@ Al ingresar con tu correo de Google podrás:
                 rel="noreferrer"
                 className="w-full py-3 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all"
               >
-                <MessageCircle className="w-3.5 h-3.5" />
+                <WhatsAppIcon className="w-3.5 h-3.5" />
                 <span>Avisar por WhatsApp y consultar motivo</span>
               </a>
 
