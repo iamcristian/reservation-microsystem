@@ -911,6 +911,96 @@ async function runE2E() {
       longPasswordRes.status === 400,
       "SEC-10 (Input Bounds / Bcrypt DoS): /api/auth/login rejects oversized passwords (> 128 chars) with HTTP 400"
     );
+
+    // 12. Dynamic SEO, Custom Favicons, Open Graph (WhatsApp), Sitemap, Robots & Manifest
+    console.log("\n--- 12. Dynamic SEO, Icons, Open Graph (WhatsApp) & PWA Manifest ---");
+    const dbBusiness = await prisma.businessSettings.findFirst({ where: { id: 1 } });
+    const expectedBizName = dbBusiness?.name || "Clínica Dental";
+
+    const waCrawlerRes = await fetch(`${BASE_URL}/`, {
+      headers: {
+        "User-Agent": "WhatsApp/2.23.20.0 A",
+        "X-Forwarded-Host": "agenda.miempresa.bo",
+        "X-Forwarded-Proto": "https",
+      },
+    });
+    const waHtml = await waCrawlerRes.text();
+    assert(
+      waCrawlerRes.status === 200 &&
+        waHtml.includes(expectedBizName) &&
+        waHtml.includes("<h1") &&
+        waHtml.includes('property="og:title"') &&
+        waHtml.includes('property="og:description"') &&
+        waHtml.includes('property="og:image"') &&
+        waHtml.includes('name="twitter:card"') &&
+        waHtml.includes('rel="canonical"') &&
+        waHtml.includes('href="https://agenda.miempresa.bo"'),
+      "SEO / WhatsApp Crawler: HTML includes SSR <h1>, canonical host URL, OG tags, and Twitter Card"
+    );
+
+    assert(
+      waHtml.includes("application/ld+json") &&
+        waHtml.includes("ReserveAction") &&
+        waHtml.includes("hasOfferCatalog"),
+      "SEO Structured Data: JSON-LD emits ReserveAction and dynamic OfferCatalog from DB services"
+    );
+
+    assert(
+      adminPage.text.includes("noindex") && adminPage.text.includes("nofollow"),
+      "SEO Privacy: /admin sets robots noindex, nofollow"
+    );
+
+    const icoRes = await fetch(`${BASE_URL}/favicon.ico`);
+    const icoBuf = Buffer.from(await icoRes.arrayBuffer());
+    assert(
+      icoRes.status === 200 && icoBuf.slice(0, 4).toString("hex") === "00000100",
+      `Favicon: /favicon.ico returns valid multi-res ICO binary (${icoBuf.length} bytes)`
+    );
+
+    for (const imgPath of ["/icon/48", "/icon/192", "/icon/512", "/apple-icon", "/opengraph-image", "/twitter-image"]) {
+      const imgRes = await fetch(`${BASE_URL}${imgPath}`);
+      const imgBuf = Buffer.from(await imgRes.arrayBuffer());
+      const isPng = imgBuf.slice(0, 8).toString("hex") === "89504e470d0a1a0a";
+      assert(
+        imgRes.status === 200 && isPng && imgBuf.length > 1000,
+        `SEO Visual Asset: ${imgPath} returns valid PNG (${imgBuf.length} bytes)`
+      );
+    }
+
+    const robotsRes = await fetch(`${BASE_URL}/robots.txt`, {
+      headers: { "X-Forwarded-Host": "agenda.miempresa.bo", "X-Forwarded-Proto": "https" },
+    });
+    const robotsTxt = await robotsRes.text();
+    assert(
+      robotsRes.status === 200 &&
+        robotsTxt.includes("Disallow: /admin") &&
+        robotsTxt.includes("Disallow: /api/") &&
+        robotsTxt.includes("Sitemap: https://agenda.miempresa.bo/sitemap.xml"),
+      "SEO Crawling: /robots.txt disallows /admin & /api/ and exposes dynamic sitemap URL"
+    );
+
+    const sitemapRes = await fetch(`${BASE_URL}/sitemap.xml`, {
+      headers: { "X-Forwarded-Host": "agenda.miempresa.bo", "X-Forwarded-Proto": "https" },
+    });
+    const sitemapXml = await sitemapRes.text();
+    assert(
+      sitemapRes.status === 200 &&
+        sitemapXml.includes("<loc>https://agenda.miempresa.bo/</loc>") &&
+        sitemapXml.includes("<image:loc>https://agenda.miempresa.bo/opengraph-image"),
+      "SEO Sitemap: /sitemap.xml lists canonical URL and Open Graph image"
+    );
+
+    const manifestRes = await fetch(`${BASE_URL}/manifest.webmanifest`);
+    const manifestJson = await manifestRes.json();
+    assert(
+      manifestRes.status === 200 &&
+        typeof manifestJson?.name === "string" &&
+        manifestJson.name.includes(expectedBizName) &&
+        Array.isArray(manifestJson.icons) &&
+        manifestJson.icons.some((ic: any) => String(ic.src).includes("/icon/192") && ic.type === "image/png") &&
+        manifestJson.icons.some((ic: any) => String(ic.src).includes("/icon/512") && ic.type === "image/png"),
+      "PWA Manifest: /manifest.webmanifest includes personalized business name and 192/512 PNG icons"
+    );
   } finally {
     // Total test data cleanup to leave database in pristine state
     if (createdAppointmentIds.length > 0) {

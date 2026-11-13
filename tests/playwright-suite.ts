@@ -701,8 +701,187 @@ async function runBrowserTests() {
       if (cancelSvcBtn) await cancelSvcBtn.click();
     }
 
+    // ========================================================================
+    // TC-13: Personalized SEO Metadata, Favicons & WhatsApp OG Image Verification
+    // ========================================================================
+    console.log("\n--- TC-13: SEO Metadata, Icons & Admin OG Preview ---");
+    const homeSeoTags = await page.evaluate(() => ({
+      title: document.title,
+      hasCanonical: Boolean(document.querySelector('link[rel="canonical"]')),
+      hasManifest: Boolean(document.querySelector('link[rel="manifest"]')),
+      hasAppleIcon: Boolean(document.querySelector('link[rel="apple-touch-icon"]')),
+      ogTitle: document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "",
+      ogImage: document.querySelector('meta[property="og:image"]')?.getAttribute("content") || "",
+      jsonLdCount: document.querySelectorAll('script[type="application/ld+json"]').length,
+    }));
+    assert(
+      homeSeoTags.title.length > 5 &&
+        homeSeoTags.hasCanonical &&
+        homeSeoTags.hasManifest &&
+        homeSeoTags.hasAppleIcon &&
+        homeSeoTags.ogTitle.length > 5 &&
+        homeSeoTags.ogImage.includes("opengraph-image") &&
+        homeSeoTags.jsonLdCount >= 1,
+      "TC-13: Home page DOM contains dynamic title, canonical, manifest, apple-icon, OG tags, and JSON-LD"
+    );
+
+    const settingsTab = await adminPage.$("button:has-text('Ajustes Local')");
+    if (settingsTab) await settingsTab.click();
+    await adminPage.waitForTimeout(600);
+    const ogPreviewImg = adminPage.locator("img[alt='Vista previa Open Graph para WhatsApp']");
+    await ogPreviewImg.waitFor({ state: "visible", timeout: 8000 });
+    await adminPage.waitForFunction(
+      () => {
+        const img = document.querySelector(
+          "img[alt='Vista previa Open Graph para WhatsApp']"
+        ) as HTMLImageElement | null;
+        return Boolean(img && img.complete && img.naturalWidth === 1200 && img.naturalHeight === 630);
+      },
+      null,
+      { timeout: 8000 }
+    );
+    await ogPreviewImg.scrollIntoViewIfNeeded();
+    await adminPage.waitForTimeout(300);
+    await adminPage.screenshot({ path: path.join(SCREENSHOT_DIR, "tc13-admin-seo-og-preview.png") });
+    const ogDims = await adminPage.evaluate(() => {
+      const img = document.querySelector(
+        "img[alt='Vista previa Open Graph para WhatsApp']"
+      ) as HTMLImageElement | null;
+      return img ? { w: img.naturalWidth, h: img.naturalHeight } : null;
+    });
+    assert(
+      ogDims?.w === 1200 && ogDims?.h === 630,
+      `TC-13: Admin SEO & WhatsApp Open Graph card renders crisp 1200x630 PNG (${ogDims?.w}x${ogDims?.h})`
+    );
+
     await adminContext.close();
     await context.close();
+
+    // ========================================================================
+    // TC-14: Mobile Responsive Layout & 16px Input Zoom Safety (360x800)
+    // ========================================================================
+    console.log("\n--- TC-14: Mobile Responsive & Touch-Safety (360x800) ---");
+    const mobileContext = await browser.newContext({
+      viewport: { width: 360, height: 800 },
+      hasTouch: true,
+      isMobile: true,
+    });
+    const mobilePage = await mobileContext.newPage();
+    mobilePage.on("pageerror", (err) => consoleErrors.push(err.message));
+
+    await mobilePage.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+    await mobilePage.waitForSelector("button:has-text('Ver mapa en la web'):visible", { timeout: 8000 });
+    await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "tc14-mobile-home.png") });
+
+    const homeMobileCheck = await mobilePage.evaluate(() => {
+      const overflow = document.documentElement.scrollWidth > window.innerWidth;
+      const mapBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+        const r = b.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && b.textContent?.includes("Ver mapa en la web");
+      });
+      const installBtn = Array.from(document.querySelectorAll("button")).find((b) => {
+        const r = b.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && b.textContent?.includes("Instalar App");
+      });
+      const mapRect = mapBtn?.getBoundingClientRect();
+      const installRect = installBtn?.getBoundingClientRect();
+      return {
+        overflow,
+        scrollW: document.documentElement.scrollWidth,
+        innerW: window.innerWidth,
+        mapHeight: mapRect?.height || 0,
+        mapRight: mapRect?.right || 0,
+        installHeight: installRect?.height || 0,
+        installRight: installRect?.right || 0,
+      };
+    });
+    assert(
+      !homeMobileCheck.overflow &&
+        homeMobileCheck.mapHeight > 0 &&
+        homeMobileCheck.mapHeight <= 42 &&
+        homeMobileCheck.mapRight <= 360 &&
+        homeMobileCheck.installRight <= 360,
+      `TC-14 Home (360x800): Zero overflow (${homeMobileCheck.scrollW}/${homeMobileCheck.innerW}) & crisp single-line pills (h=${Math.round(homeMobileCheck.mapHeight)}px)`
+    );
+
+    // Check Auth Modal header close vs Google OAuth non-overlap & 16px inputs
+    const mobileLoginBtn = await mobilePage.$("button:has-text('Ingresar')");
+    if (mobileLoginBtn) {
+      await mobileLoginBtn.click();
+      await mobilePage.waitForTimeout(300);
+      const modalMetrics = await mobilePage.evaluate(() => {
+        const inputs = Array.from(document.querySelectorAll("div.fixed input"));
+        const minInputFont = Math.min(
+          ...inputs.map((i) => parseFloat(getComputedStyle(i).fontSize) || 16)
+        );
+        const closeBtn = Array.from(document.querySelectorAll("div.fixed button")).find(
+          (b) => b.getAttribute("aria-label") === "Cerrar"
+        );
+        const googleBtn = Array.from(document.querySelectorAll("div.fixed button")).find((b) =>
+          b.textContent?.includes("Google")
+        );
+        const cr = closeBtn?.getBoundingClientRect();
+        const gr = googleBtn?.getBoundingClientRect();
+        const overlaps =
+          cr && gr
+            ? !(cr.right <= gr.left || cr.left >= gr.right || cr.bottom <= gr.top || cr.top >= gr.bottom)
+            : false;
+        return {
+          overflow: document.documentElement.scrollWidth > window.innerWidth,
+          minInputFont,
+          overlaps,
+        };
+      });
+      assert(
+        !modalMetrics.overflow && modalMetrics.minInputFont >= 16 && !modalMetrics.overlaps,
+        `TC-14 Auth Modal (360px): No close/Google overlap & inputs >= 16px (${modalMetrics.minInputFont}px)`
+      );
+      const closeModalBtn = await mobilePage.$("button[aria-label='Cerrar']");
+      if (closeModalBtn) await closeModalBtn.click();
+      await mobilePage.waitForTimeout(200);
+    }
+
+    // Check /admin login + tabs on 360x800 mobile
+    await mobilePage.goto(`${BASE_URL}/admin`, { waitUntil: "networkidle" });
+    await mobilePage.waitForSelector("input[type='email']", { timeout: 8000 });
+    const adminLoginMobile = await mobilePage.evaluate(() => {
+      const inputs = Array.from(document.querySelectorAll("input"));
+      const minFont = Math.min(...inputs.map((i) => parseFloat(getComputedStyle(i).fontSize) || 16));
+      return {
+        overflow: document.documentElement.scrollWidth > window.innerWidth,
+        minFont,
+      };
+    });
+    assert(
+      !adminLoginMobile.overflow && adminLoginMobile.minFont >= 16,
+      `TC-14 Admin Login (360px): Zero overflow & inputs >= 16px (${adminLoginMobile.minFont}px)`
+    );
+
+    await mobilePage.fill("input[type='email']", "alejandro@sonrisa.com");
+    await mobilePage.fill("input[placeholder='••••••••']", "Admin123!");
+    await mobilePage.click("button:has-text('Ingresar al Panel')");
+    await mobilePage.waitForSelector("text=ADMIN / DUEÑO PRINCIPAL", { timeout: 10000 });
+
+    const mobileTabsToCheck = ["Agenda & Imprevistos", "Servicios", "Ajustes Local"];
+    let adminTabsClean = true;
+    for (const tabLabel of mobileTabsToCheck) {
+      const tBtn = await mobilePage.$(`button:has-text('${tabLabel}')`);
+      if (tBtn) {
+        await tBtn.click();
+        await mobilePage.waitForTimeout(450);
+        const tabOverflow = await mobilePage.evaluate(
+          () => document.documentElement.scrollWidth > window.innerWidth
+        );
+        if (tabOverflow) adminTabsClean = false;
+      }
+    }
+    await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "tc14-mobile-admin.png") });
+    assert(
+      adminTabsClean,
+      "TC-14 Admin Tabs (360x800): Zero horizontal overflow across Agenda, Servicios & Ajustes Local"
+    );
+
+    await mobileContext.close();
 
     // General runtime stability check
     assert(consoleErrors.length === 0, "STABILITY: Zero uncaught critical exceptions in browser console");
