@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { MapPin, Navigation, Copy, Check } from "lucide-react";
+import { MapPin, Copy, Check } from "lucide-react";
 import { parseCoordinatesFromUrl } from "./InteractiveMapPicker";
 
 interface BranchMapProps {
@@ -16,8 +16,8 @@ interface BranchMapProps {
 }
 
 export default function BranchMap({
-  name = "Clínica & Reservas",
-  addressText = "Av. Simón López esq. Av. Beijing, Cochabamba, Bolivia",
+  name = "Mi Negocio",
+  addressText = "Dirección por configurar",
   lat: propLat,
   lng: propLng,
   googleMapsUrl,
@@ -75,7 +75,7 @@ export default function BranchMap({
 
           <span className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            Cochabamba
+            Ubicación exacta
           </span>
         </div>
       )}

@@ -85,6 +85,45 @@ assert(
   coords !== null && coords.lat === -16.5 && coords.lng === -68.15,
   "Parses dynamic clinic coordinates from googleMapsUrl"
 );
+const pinFirstCoords = parseCoordinatesFromUrl(
+  "https://www.google.com/maps/place/Mi+Local/@-17.3900,-66.1500,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d-17.37125!4d-66.17425"
+);
+assert(
+  pinFirstCoords !== null &&
+    pinFirstCoords.lat === -17.37125 &&
+    pinFirstCoords.lng === -66.17425,
+  "Prioritizes exact !3d!4d pin coordinates over @ viewport center"
+);
+const llCoords = parseCoordinatesFromUrl(
+  "https://maps.google.com/?ll=-17.7833,-63.1821&z=16"
+);
+assert(
+  llCoords !== null && llCoords.lat === -17.7833 && llCoords.lng === -63.1821,
+  "Parses ll= Google Maps parameter"
+);
+const encodedCenterCoords = parseCoordinatesFromUrl(
+  "https://maps.google.com/maps/api/staticmap?center=-17.3713%2C-66.1742&zoom=15"
+);
+assert(
+  encodedCenterCoords !== null &&
+    encodedCenterCoords.lat === -17.3713 &&
+    encodedCenterCoords.lng === -66.1742,
+  "Parses URL-encoded center= Google Maps parameter"
+);
+const viewportAtCoords = parseCoordinatesFromUrl(
+  "https://www.google.com/maps/@-17.38123,-66.16543,18z"
+);
+assert(
+  viewportAtCoords !== null &&
+    viewportAtCoords.lat === -17.38123 &&
+    viewportAtCoords.lng === -66.16543,
+  "Parses @lat,lng Google Maps viewport link"
+);
+assert(
+  parseCoordinatesFromUrl("https://www.google.com/maps?q=95.0,-66.1") === null &&
+    parseCoordinatesFromUrl("https://www.google.com/maps?q=0,0") === null,
+  "Rejects out-of-range or null-island coordinates"
+);
 assert(cleanPhoneForWhatsApp("+591 700-12345") === "59170012345", "Strips formatting from phone");
 assert(
   buildWhatsAppUrl("+591 70012345", "Hola mundo") ===

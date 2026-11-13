@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   Calendar,
   Clock,
@@ -618,13 +618,18 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     reason: "",
   });
 
-  // White-label settings state
-  const [settingsForm, setSettingsForm] = useState<any>({ ...settings });
+  // White-label settings state (guard against 8s background poll overwriting unsaved edits)
+  const [settingsForm, setSettingsFormRaw] = useState<any>({ ...settings });
+  const settingsDirtyRef = useRef(false);
+  const setSettingsForm = useCallback((updater: any) => {
+    settingsDirtyRef.current = true;
+    setSettingsFormRaw(updater);
+  }, []);
   const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
-    if (settings) {
-      setSettingsForm({ ...settings });
+    if (settings && !settingsDirtyRef.current) {
+      setSettingsFormRaw({ ...settings });
     }
   }, [settings]);
 
@@ -1155,6 +1160,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
         body: JSON.stringify(settingsForm),
       });
       if (res.ok) {
+        settingsDirtyRef.current = false;
         showToast("success", "¡Ajustes Guardados!", "La configuración del negocio, horarios globales y logo se guardaron con éxito.");
         onRefresh();
       } else {
@@ -3316,26 +3322,29 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                   setSettingsForm((prev: any) => ({
                     ...prev,
                     googleMapsUrl,
-                    ...(suggestedAddress && (!prev.addressText || prev.addressText.includes("Simón López"))
+                    ...(suggestedAddress &&
+                    (!prev?.addressText ||
+                      !prev.addressText.trim() ||
+                      prev.addressText.includes("Simón López"))
                       ? { addressText: suggestedAddress }
                       : {}),
                   }));
                 }}
-                height="240px"
+                height="260px"
               />
 
               <div className="border-[1.5px] border-zinc-200 bg-[#F4F4F6] rounded-xl px-3 py-2">
                 <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-0.5">
-                  Enlace Generado de Google Maps (Sincronizado Automáticamente)
+                  Enlace de Google Maps (Sincronizado Automáticamente)
                 </label>
                 <input
                   type="url"
                   value={settingsForm?.googleMapsUrl || ""}
                   onChange={(e) =>
-                    setSettingsForm({
-                      ...settingsForm,
+                    setSettingsForm((prev: any) => ({
+                      ...prev,
                       googleMapsUrl: e.target.value,
-                    })
+                    }))
                   }
                   placeholder="https://www.google.com/maps/search/?api=1&query=..."
                   className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full"

@@ -104,7 +104,7 @@ export function BranchLocationModal({
 
         <div className="p-3">
           <BranchMap
-            name={businessName || "Clínica & Reservas"}
+            name={businessName || "Mi Negocio"}
             addressText={resolvedAddress}
             lat={coords.lat}
             lng={coords.lng}

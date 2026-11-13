@@ -36,3 +36,19 @@ body {
   height: 0 !important;
 }
 
+/* Fix Tailwind v4 img reset conflicts with Leaflet map tiles and markers */
+.leaflet-container {
+  font-family: inherit;
+  z-index: 0;
+  background: #e4e4e7;
+}
+.leaflet-container img,
+.leaflet-container .leaflet-tile,
+.leaflet-container .leaflet-tile-pane img {
+  max-width: none !important;
+  max-height: none !important;
+}
+.leaflet-control-attribution {
+  display: none;
+}
+
