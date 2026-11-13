@@ -244,17 +244,41 @@ export function sanitizeAndSortShifts(shifts: ShiftItem[]): ShiftItem[] {
   });
 }
 
+export interface OverrideTimeOffItem {
+  id?: string;
+  type?: string;
+  reason?: string | null;
+  startAt: Date | string;
+  endAt: Date | string;
+}
+
 export interface OverrideStaffTarget {
   displayName: string;
   isActive?: boolean;
   workingShifts: ShiftItem[];
+  timeOffs?: OverrideTimeOffItem[];
 }
+
+export type DayClosureCode =
+  | "INVALID_DATE"
+  | "PAST_DATE"
+  | "STAFF_PAUSED"
+  | "NO_SHIFTS"
+  | "VACATION"
+  | "FULL_DAY_OFF"
+  | "PARTIAL_BLOCKS_CLOSED"
+  | "TODAY_ENDED";
 
 export interface DayScheduleStatus {
   hasShiftsOnDay: boolean;
   isPastDate: boolean;
   isToday: boolean;
   isDayClosedAlready: boolean;
+  closureCode?: DayClosureCode;
+  closedBadge?: string;
+  hasPartialBlockOnDay?: boolean;
+  baseEarliestStartStr?: string;
+  baseLatestEndStr?: string;
   earliestStartMin: number;
   latestEndMin: number;
   earliestStartStr: string;
@@ -274,7 +298,9 @@ const WEEKDAY_NAMES_PLURAL = [
 
 /**
  * Evaluates whether a target doctor (or the entire clinic) still has open working
- * hours remaining on `dateStr` relative to `now`.
+ * hours remaining on `dateStr` relative to `now`, factoring in weekly shifts,
+ * paused status (`isActive === false`), and active TimeOff blocks (`VACATION`,
+ * `FULL_DAY_OFF`, `LATE_START`, `EARLY_LEAVE`, `CUSTOM_BLOCK`).
  */
 export function getDayScheduleStatus(params: {
   dateStr: string;
@@ -292,6 +318,8 @@ export function getDayScheduleStatus(params: {
       isPastDate: false,
       isToday: false,
       isDayClosedAlready: true,
+      closureCode: "INVALID_DATE",
+      closedBadge: "Fecha inválida",
       earliestStartMin: -1,
       latestEndMin: -1,
       earliestStartStr: "",
@@ -308,6 +336,8 @@ export function getDayScheduleStatus(params: {
       isPastDate: true,
       isToday: false,
       isDayClosedAlready: true,
+      closureCode: "PAST_DATE",
+      closedBadge: "Fecha pasada",
       earliestStartMin: -1,
       latestEndMin: -1,
       earliestStartStr: "",
@@ -316,18 +346,120 @@ export function getDayScheduleStatus(params: {
     };
   }
 
-  const dayOfWeek = new Date(`${dateStr}T00:00:00`).getDay();
   const activeTargets = targets.filter((t) => t.isActive !== false);
-  const shiftsOnDay = activeTargets.flatMap((t) =>
-    (t.workingShifts || []).filter((s) => {
+  if (targets.length > 0 && activeTargets.length === 0) {
+    const subject = isAllTargets
+      ? "Todos los profesionales tienen su agenda en pausa (Modo vacaciones)"
+      : `${targets[0]?.displayName || "El profesional"} tiene su agenda en pausa (Modo vacaciones)`;
+    return {
+      hasShiftsOnDay: false,
+      isPastDate: false,
+      isToday,
+      isDayClosedAlready: true,
+      closureCode: "STAFF_PAUSED",
+      closedBadge: "🏖️ Agenda en pausa",
+      earliestStartMin: -1,
+      latestEndMin: -1,
+      earliestStartStr: "",
+      latestEndStr: "",
+      reason: `${subject}. Reanuda la agenda antes de registrar imprevistos o bloqueos.`,
+    };
+  }
+
+  const dayOfWeek = new Date(`${dateStr}T00:00:00`).getDay();
+  const dayStart = new Date(`${dateStr}T00:00:00`);
+  const dayEnd = new Date(`${dateStr}T23:59:59.999`);
+
+  interface EvaluatedTargetWindow {
+    target: OverrideStaffTarget;
+    baseStartMin: number;
+    baseEndMin: number;
+    effectiveStartMin: number;
+    effectiveEndMin: number;
+    hasVacation: boolean;
+    hasFullDayOff: boolean;
+    hasPartialBlock: boolean;
+  }
+
+  const evaluatedTargets: EvaluatedTargetWindow[] = [];
+
+  for (const t of activeTargets) {
+    const validShifts = (t.workingShifts || []).filter((s) => {
       if (s.dayOfWeek !== dayOfWeek) return false;
       const startMin = timeToMinutes(s.startTime);
       const endMin = timeToMinutes(s.endTime);
       return startMin !== -1 && endMin > startMin;
-    })
-  );
+    });
 
-  if (shiftsOnDay.length === 0) {
+    if (validShifts.length === 0) continue;
+
+    const baseStartMin = Math.min(...validShifts.map((s) => timeToMinutes(s.startTime)));
+    const baseEndMin = Math.max(...validShifts.map((s) => timeToMinutes(s.endTime)));
+
+    let effectiveStartMin = baseStartMin;
+    let effectiveEndMin = baseEndMin;
+    let hasVacation = false;
+    let hasFullDayOff = false;
+    let hasPartialBlock = false;
+
+    const overlappingBlocks = (t.timeOffs || []).filter((to) => {
+      const s = new Date(to.startAt);
+      const e = new Date(to.endAt);
+      return !isNaN(s.getTime()) && !isNaN(e.getTime()) && s <= dayEnd && e >= dayStart;
+    });
+
+    for (const to of overlappingBlocks) {
+      const s = new Date(to.startAt);
+      const e = new Date(to.endAt);
+      const blockStartMin = s <= dayStart ? 0 : s.getHours() * 60 + s.getMinutes();
+      const blockEndMin =
+        e >= dayEnd || (e.getHours() === 23 && e.getMinutes() >= 58)
+          ? 24 * 60
+          : e.getHours() * 60 + e.getMinutes();
+
+      if (to.type === "VACATION") {
+        hasVacation = true;
+        effectiveStartMin = baseEndMin;
+        effectiveEndMin = baseStartMin;
+        continue;
+      }
+
+      if (
+        to.type === "FULL_DAY_OFF" ||
+        (blockStartMin <= baseStartMin && blockEndMin >= baseEndMin)
+      ) {
+        hasFullDayOff = true;
+        effectiveStartMin = baseEndMin;
+        effectiveEndMin = baseStartMin;
+        continue;
+      }
+
+      if (to.type === "LATE_START" || blockStartMin <= effectiveStartMin) {
+        if (blockEndMin > effectiveStartMin) {
+          effectiveStartMin = Math.min(baseEndMin, blockEndMin);
+          hasPartialBlock = true;
+        }
+      } else if (to.type === "EARLY_LEAVE" || blockEndMin >= effectiveEndMin) {
+        if (blockStartMin < effectiveEndMin) {
+          effectiveEndMin = Math.max(baseStartMin, blockStartMin);
+          hasPartialBlock = true;
+        }
+      }
+    }
+
+    evaluatedTargets.push({
+      target: t,
+      baseStartMin,
+      baseEndMin,
+      effectiveStartMin,
+      effectiveEndMin,
+      hasVacation,
+      hasFullDayOff,
+      hasPartialBlock,
+    });
+  }
+
+  if (evaluatedTargets.length === 0) {
     const dayLabel = WEEKDAY_NAMES_PLURAL[dayOfWeek] || "ese día";
     const subject = isAllTargets
       ? "Ningún profesional atiende"
@@ -337,6 +469,8 @@ export function getDayScheduleStatus(params: {
       isPastDate: false,
       isToday,
       isDayClosedAlready: true,
+      closureCode: "NO_SHIFTS",
+      closedBadge: "Sin atención",
       earliestStartMin: -1,
       latestEndMin: -1,
       earliestStartStr: "",
@@ -345,12 +479,86 @@ export function getDayScheduleStatus(params: {
     };
   }
 
-  const startMins = shiftsOnDay.map((s) => timeToMinutes(s.startTime));
-  const endMins = shiftsOnDay.map((s) => timeToMinutes(s.endTime));
-  const earliestStartMin = Math.min(...startMins);
-  const latestEndMin = Math.max(...endMins);
+  const baseEarliestStartMin = Math.min(...evaluatedTargets.map((e) => e.baseStartMin));
+  const baseLatestEndMin = Math.max(...evaluatedTargets.map((e) => e.baseEndMin));
+  const baseEarliestStartStr = minutesToTime(baseEarliestStartMin);
+  const baseLatestEndStr = minutesToTime(baseLatestEndMin);
+
+  const openTargets = evaluatedTargets.filter(
+    (e) => !e.hasVacation && !e.hasFullDayOff && e.effectiveStartMin < e.effectiveEndMin
+  );
+
+  if (openTargets.length === 0) {
+    const allOnVacation = evaluatedTargets.every((e) => e.hasVacation);
+    const anyFullDayOrVacation = evaluatedTargets.every(
+      (e) => e.hasVacation || e.hasFullDayOff
+    );
+    const subjectName = isAllTargets
+      ? "Todo el equipo"
+      : evaluatedTargets[0]?.target.displayName || "El profesional";
+
+    if (allOnVacation) {
+      return {
+        hasShiftsOnDay: true,
+        isPastDate: false,
+        isToday,
+        isDayClosedAlready: true,
+        closureCode: "VACATION",
+        closedBadge: "🏖️ En vacaciones",
+        baseEarliestStartStr,
+        baseLatestEndStr,
+        earliestStartMin: baseEarliestStartMin,
+        latestEndMin: baseLatestEndMin,
+        earliestStartStr: baseEarliestStartStr,
+        latestEndStr: baseLatestEndStr,
+        reason: isAllTargets
+          ? `Todo el equipo se encuentra en periodo de vacaciones programadas el ${dateStr}. Si deseas habilitar la fecha, primero usa "Reabrir horario / Quitar bloqueo".`
+          : `${subjectName} se encuentra en vacaciones programadas el ${dateStr}. No es posible aplicar "Entro más tarde", "Salgo antes" ni "Cerrar día" sobre un día de vacaciones; si deseas atender, primero usa "Reabrir horario / Quitar bloqueo".`,
+      };
+    }
+
+    if (anyFullDayOrVacation) {
+      return {
+        hasShiftsOnDay: true,
+        isPastDate: false,
+        isToday,
+        isDayClosedAlready: true,
+        closureCode: "FULL_DAY_OFF",
+        closedBadge: "⛔ Día ya cerrado",
+        baseEarliestStartStr,
+        baseLatestEndStr,
+        earliestStartMin: baseEarliestStartMin,
+        latestEndMin: baseLatestEndMin,
+        earliestStartStr: baseEarliestStartStr,
+        latestEndStr: baseLatestEndStr,
+        reason: isAllTargets
+          ? `La agenda de todo el equipo ya está cerrada para el ${dateStr}. Si deseas modificar este día, primero usa "Reabrir horario / Quitar bloqueo".`
+          : `La agenda de ${subjectName} ya tiene el día completo cerrado el ${dateStr}. Si deseas modificar el horario de esta fecha, primero haz clic en "Reabrir horario / Quitar bloqueo".`,
+      };
+    }
+
+    return {
+      hasShiftsOnDay: true,
+      isPastDate: false,
+      isToday,
+      isDayClosedAlready: true,
+      closureCode: "PARTIAL_BLOCKS_CLOSED",
+      closedBadge: "⛔ Horario bloqueado",
+      baseEarliestStartStr,
+      baseLatestEndStr,
+      earliestStartMin: baseEarliestStartMin,
+      latestEndMin: baseLatestEndMin,
+      earliestStartStr: baseEarliestStartStr,
+      latestEndStr: baseLatestEndStr,
+      reason: `El horario de atención de ${subjectName} para el ${dateStr} ya está completamente cubierto por bloqueos previos. Usa "Reabrir horario / Quitar bloqueo" si deseas modificarlo.`,
+    };
+  }
+
+  const earliestStartMin = Math.min(...openTargets.map((e) => e.effectiveStartMin));
+  const latestEndMin = Math.max(...openTargets.map((e) => e.effectiveEndMin));
   const earliestStartStr = minutesToTime(earliestStartMin);
   const latestEndStr = minutesToTime(latestEndMin);
+  const hasPartialBlockOnDay = openTargets.some((e) => e.hasPartialBlock);
 
   if (isToday) {
     const nowMin = now.getHours() * 60 + now.getMinutes();
@@ -364,6 +572,11 @@ export function getDayScheduleStatus(params: {
         isPastDate: false,
         isToday: true,
         isDayClosedAlready: true,
+        closureCode: "TODAY_ENDED",
+        closedBadge: `Cerró ${latestEndStr}`,
+        hasPartialBlockOnDay,
+        baseEarliestStartStr,
+        baseLatestEndStr,
         earliestStartMin,
         latestEndMin,
         earliestStartStr,
@@ -378,6 +591,9 @@ export function getDayScheduleStatus(params: {
     isPastDate: false,
     isToday,
     isDayClosedAlready: false,
+    hasPartialBlockOnDay,
+    baseEarliestStartStr,
+    baseLatestEndStr,
     earliestStartMin,
     latestEndMin,
     earliestStartStr,
@@ -514,4 +730,80 @@ export function validateScheduleOverride(params: {
   }
 
   return { valid: true, status };
+}
+
+/**
+ * Validates that a scheduled vacation range (`startDate` .. `endDate`) is chronological,
+ * not in the past, and does not overlap an existing `VACATION` block for the target staff.
+ */
+export function validateVacationRange(params: {
+  startDate: string;
+  endDate: string;
+  targets: OverrideStaffTarget[];
+  now?: Date;
+}): { valid: boolean; error?: string } {
+  const { startDate, endDate, targets } = params;
+  const now = params.now ?? new Date();
+  const todayStr = formatLocalDateYYYYMMDD(now);
+
+  if (!startDate || !endDate) {
+    return {
+      valid: false,
+      error: "Por favor selecciona la fecha de inicio y de retorno de las vacaciones.",
+    };
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    return {
+      valid: false,
+      error: "El formato de las fechas de vacaciones es inválido.",
+    };
+  }
+
+  if (startDate > endDate) {
+    return {
+      valid: false,
+      error: "La fecha de inicio debe ser anterior o igual a la fecha de retorno.",
+    };
+  }
+
+  if (startDate < todayStr || endDate < todayStr) {
+    return {
+      valid: false,
+      error: "No es posible programar vacaciones en fechas pasadas.",
+    };
+  }
+
+  const activeTargets = targets.filter((t) => t.isActive !== false);
+  if (targets.length > 0 && activeTargets.length === 0) {
+    return {
+      valid: false,
+      error: `${targets[0]?.displayName || "El profesional"} ya tiene su agenda en pausa (Modo vacaciones).`,
+    };
+  }
+
+  const rangeStart = new Date(`${startDate}T00:00:00`);
+  const rangeEnd = new Date(`${endDate}T23:59:59.999`);
+
+  for (const t of activeTargets) {
+    const overlappingVacation = (t.timeOffs || []).find((to) => {
+      if (to.type !== "VACATION") return false;
+      const s = new Date(to.startAt);
+      const e = new Date(to.endAt);
+      return !isNaN(s.getTime()) && !isNaN(e.getTime()) && s <= rangeEnd && e >= rangeStart;
+    });
+
+    if (overlappingVacation) {
+      const exStartStr = formatLocalDateYYYYMMDD(new Date(overlappingVacation.startAt));
+      const exEndStr = formatLocalDateYYYYMMDD(new Date(overlappingVacation.endAt));
+      const rangeLabel =
+        exStartStr === exEndStr ? `el ${exStartStr}` : `del ${exStartStr} al ${exEndStr}`;
+      return {
+        valid: false,
+        error: `${t.displayName} ya tiene vacaciones programadas (${rangeLabel}) que se cruzan con este rango. Si deseas modificar las fechas, primero quita el bloqueo de vacaciones actual.`,
+      };
+    }
+  }
+
+  return { valid: true };
 }

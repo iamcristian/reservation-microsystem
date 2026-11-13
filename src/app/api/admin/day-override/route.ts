@@ -4,7 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { formatLocalDateYYYYMMDD } from "@/lib/date-utils";
 import { formatTimeHHmm } from "@/lib/slot-engine";
-import { validateScheduleOverride } from "@/lib/validation/acceptance-criteria";
+import {
+  validateScheduleOverride,
+  validateVacationRange,
+} from "@/lib/validation/acceptance-criteria";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +51,7 @@ export async function POST(req: Request) {
 
     const targetStaffRecords = await prisma.staffProfile.findMany({
       where: staffId === "ALL" ? { isActive: true } : { id: staffId },
-      include: { workingShifts: true },
+      include: { workingShifts: true, timeOffs: true },
     });
 
     if (targetStaffRecords.length === 0) {
@@ -61,11 +64,23 @@ export async function POST(req: Request) {
     const targetStaffIds = targetStaffRecords.map((s) => s.id);
     const now = new Date();
 
-    // Enforce temporal invariants: disallow overrides on already-ended shifts, non-working days, or past dates
+    // Enforce temporal & state invariants: disallow overrides on vacations, closed days, paused staff, non-working days, or past dates
     if (type === "VACATION") {
       if (endDate <= now) {
         return NextResponse.json(
           { error: "No es posible programar vacaciones en fechas pasadas." },
+          { status: 400 }
+        );
+      }
+      const vacValidation = validateVacationRange({
+        startDate: formatLocalDateYYYYMMDD(startDate),
+        endDate: formatLocalDateYYYYMMDD(endDate),
+        targets: targetStaffRecords,
+        now,
+      });
+      if (!vacValidation.valid) {
+        return NextResponse.json(
+          { error: vacValidation.error },
           { status: 400 }
         );
       }
@@ -240,13 +255,26 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. Save TimeOff record (clean up prior overlapping blocks for this staff on this day)
-    if (type === "FULL_DAY_OFF") {
+    // 3. Save TimeOff record (clean up prior redundant blocks for this staff on the target window)
+    if (type === "FULL_DAY_OFF" || type === "VACATION") {
       await prisma.timeOff.deleteMany({
         where: {
           staffId: { in: targetStaffIds },
+          type: { not: "VACATION" },
           startAt: { gte: startDate },
           endAt: { lte: endDate },
+        },
+      });
+    } else if (type === "LATE_START" || type === "EARLY_LEAVE") {
+      const dayStr = formatLocalDateYYYYMMDD(startDate);
+      const dayStartBound = new Date(`${dayStr}T00:00:00`);
+      const dayEndBound = new Date(`${dayStr}T23:59:59.999`);
+      await prisma.timeOff.deleteMany({
+        where: {
+          staffId: { in: targetStaffIds },
+          type,
+          startAt: { gte: dayStartBound },
+          endAt: { lte: dayEndBound },
         },
       });
     }
@@ -271,9 +299,10 @@ export async function POST(req: Request) {
       timeOffs: createdTimeOffs,
       conflictsResolved: conflicting.length,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Day override error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Error interno";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -315,8 +344,9 @@ export async function DELETE(req: Request) {
     await prisma.timeOff.delete({ where: { id } });
 
     return NextResponse.json({ ok: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Delete day override error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Error interno";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
