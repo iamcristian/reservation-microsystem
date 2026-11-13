@@ -7,7 +7,7 @@ import {
   sanitizeImageOrDataUrl,
   VALID_APPOINTMENT_STATUSES,
 } from "../src/lib/validation/input-validators";
-import { parseCoordinatesFromUrl } from "../src/lib/geo";
+import { buildGoogleMapsEmbedUrl, parseCoordinatesFromUrl } from "../src/lib/geo";
 import { buildWhatsAppUrl, cleanPhoneForWhatsApp } from "../src/lib/whatsapp";
 import { describeTimeOffBlock, isTimeOffOnDate } from "../src/lib/timeoff-utils";
 
@@ -123,6 +123,28 @@ assert(
   parseCoordinatesFromUrl("https://www.google.com/maps?q=95.0,-66.1") === null &&
     parseCoordinatesFromUrl("https://www.google.com/maps?q=0,0") === null,
   "Rejects out-of-range or null-island coordinates"
+);
+const directEmbedUrl = buildGoogleMapsEmbedUrl(-17.3713, -66.1742);
+assert(
+  directEmbedUrl ===
+    "https://www.google.com/maps/embed?origin=mfe&pb=!1m3!2m1!1s-17.371300,-66.174200!6i16!3m1!1ses!5m1!1ses",
+  "Builds direct keyless Google Maps embed URL from coordinates"
+);
+assert(
+  buildGoogleMapsEmbedUrl(
+    -17.3713,
+    -66.1742,
+    "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1000"
+  ) === "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1000",
+  "Preserves valid official Google Maps embed URL"
+);
+assert(
+  buildGoogleMapsEmbedUrl(
+    -17.3713,
+    -66.1742,
+    "https://evil.example/maps/embed"
+  ).startsWith("https://www.google.com/maps/embed?origin=mfe"),
+  "Rejects non-Google host passed into Google Maps embed helper"
 );
 assert(cleanPhoneForWhatsApp("+591 700-12345") === "59170012345", "Strips formatting from phone");
 assert(

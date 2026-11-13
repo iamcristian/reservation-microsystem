@@ -2,7 +2,11 @@
 
 import React, { useState } from "react";
 import { MapPin, Copy, Check } from "lucide-react";
-import { parseCoordinatesFromUrl } from "./InteractiveMapPicker";
+import {
+  buildGoogleMapsEmbedUrl,
+  buildGoogleMapsUrl,
+  parseCoordinatesFromUrl,
+} from "@/lib/geo";
 
 interface BranchMapProps {
   name?: string;
@@ -33,18 +37,15 @@ export default function BranchMap({
   const lng = parsedCoords?.lng ?? (propLng ?? -66.1742);
 
   // Open exact location pin without calculating route or directions
+  const trimmedUrl = googleMapsUrl?.trim() || "";
   const exactMapsUrl =
-    googleMapsUrl && googleMapsUrl.trim().length > 5 && !googleMapsUrl.includes("/dir/")
-      ? googleMapsUrl
-      : `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    trimmedUrl.length > 5 &&
+    !trimmedUrl.includes("/dir/") &&
+    !trimmedUrl.includes("/maps/embed")
+      ? trimmedUrl
+      : buildGoogleMapsUrl(lat, lng);
 
-  // Bounding box calculated for street level zoom in Cochabamba (Av. Simón López & Beijing)
-  const minLon = (lng - 0.008).toFixed(4);
-  const maxLon = (lng + 0.008).toFixed(4);
-  const minLat = (lat - 0.007).toFixed(4);
-  const maxLat = (lat + 0.007).toFixed(4);
-
-  const iframeSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${minLon}%2C${minLat}%2C${maxLon}%2C${maxLat}&layer=mapnik&marker=${lat}%2C${lng}`;
+  const iframeSrc = buildGoogleMapsEmbedUrl(lat, lng, googleMapsUrl);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(addressText);
@@ -80,25 +81,27 @@ export default function BranchMap({
         </div>
       )}
 
-      {/* Map Canvas (Oficial OpenStreetMap Responsive Embed) */}
+      {/* Map Canvas (Google Maps Interactive Embed) */}
       <div className="relative w-full bg-zinc-100" style={{ height }}>
         <iframe
-          title="Mapa de Ubicación"
+          title="Mapa de Ubicación en Google Maps"
           width="100%"
           height="100%"
           style={{ border: 0, display: "block" }}
-          scrolling="no"
-          src={iframeSrc}
           loading="lazy"
+          allowFullScreen
+          referrerPolicy="no-referrer-when-downgrade"
+          src={iframeSrc}
         />
 
-        {/* Floating marker notice pill */}
-        <div className="absolute top-2 left-2 right-12 z-10 pointer-events-none">
-          <span className="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-white/95 text-zinc-800 font-bold border border-zinc-200 shadow-sm backdrop-blur-xs max-w-full">
-            <span className="text-rose-600 shrink-0">📍</span>
-            <span className="truncate">{addressText || name}</span>
-          </span>
-        </div>
+        {compact && (
+          <div className="absolute bottom-2 left-2 right-12 z-10 pointer-events-none">
+            <span className="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-white/95 text-zinc-800 font-bold border border-zinc-200 shadow-sm backdrop-blur-xs max-w-full">
+              <span className="text-rose-600 shrink-0">📍</span>
+              <span className="truncate">{addressText || name}</span>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Action Footer Bar */}
