@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, getImpersonatorId } from "@/lib/session";
 import { getCustomerBootstrapAppointments } from "@/lib/appointment-queries";
+import { DEFAULT_BUSINESS_LOGO } from "@/lib/avatars";
 
 export interface BootstrapHistoryPage {
   items: any[];
@@ -47,15 +48,14 @@ export async function getBootstrapPayload(options: { publicOnly?: boolean } = {}
       update: {},
       create: {
         id: 1,
-        name: "Clínica Dental & Estética Sonrisa",
-        tagline: "Atención odontológica y estética de primer nivel",
-        logoUrl:
-          "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=150&auto=format&fit=crop&q=80",
-        addressText: "Av. Simón López esq. Av. Beijing, Cochabamba, Bolivia",
-        googleMapsUrl: "https://www.google.com/maps/search/?api=1&query=-17.3713,-66.1742",
-        phoneWhatsapp: "+52 55 1234 5678",
-        currencySymbol: "$",
-        staffLabel: "Doctor(a)",
+        name: "Mi Negocio",
+        tagline: "Reserva tu cita en segundos",
+        logoUrl: DEFAULT_BUSINESS_LOGO,
+        addressText: "Av. Principal 123, Bolivia",
+        googleMapsUrl: "https://www.google.com/maps/search/?api=1&query=-17.3895,-66.1568",
+        phoneWhatsapp: "+59170000000",
+        currencySymbol: "Bs",
+        staffLabel: "Especialista",
         slotStepMin: 30,
         bookingHorizonDays: 7,
         minLeadTimeMinutes: 30,
@@ -63,6 +63,24 @@ export async function getBootstrapPayload(options: { publicOnly?: boolean } = {}
         minCancelNoticeHours: 6,
         themePrimaryHex: "#1F1F23",
         themeSurfaceHex: "#9FA0A6",
+      },
+    });
+  } else if (
+    settings.name === "Clínica Dental & Estética Sonrisa" &&
+    settings.currencySymbol === "$"
+  ) {
+    settings = await prisma.businessSettings.update({
+      where: { id: 1 },
+      data: {
+        name: "Mi Negocio",
+        tagline: "Reserva tu cita en segundos",
+        logoUrl: DEFAULT_BUSINESS_LOGO,
+        currencySymbol: "Bs",
+        staffLabel: "Especialista",
+        phoneWhatsapp:
+          settings.phoneWhatsapp === "+52 55 1234 5678"
+            ? "+59170000000"
+            : settings.phoneWhatsapp,
       },
     });
   }

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="g2" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F47521"/>
+      <stop offset="100%" stop-color="#C2410C"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="100" fill="url(#g2)"/>
+  <circle cx="100" cy="108" r="76" fill="#FFFFFF" fill-opacity="0.12"/>
+  <!-- Fox Ears -->
+  <path d="M48 92L54 40L92 70Z" fill="#FFF7ED"/>
+  <path d="M152 92L146 40L108 70Z" fill="#FFF7ED"/>
+  <path d="M56 82L60 52L82 70Z" fill="#FB923C"/>
+  <path d="M144 82L140 52L118 70Z" fill="#FB923C"/>
+  <!-- Face -->
+  <ellipse cx="100" cy="112" rx="54" ry="46" fill="#FFF7ED"/>
+  <!-- Cheeks -->
+  <path d="M46 112C54 104 68 108 74 126C62 132 50 124 46 112Z" fill="#FED7AA"/>
+  <path d="M154 112C146 104 132 108 126 126C138 132 150 124 154 112Z" fill="#FED7AA"/>
+  <!-- Eyes -->
+  <circle cx="80" cy="106" r="7.5" fill="#18181B"/>
+  <circle cx="120" cy="106" r="7.5" fill="#18181B"/>
+  <circle cx="82.5" cy="103.5" r="2.5" fill="#FFFFFF"/>
+  <circle cx="122.5" cy="103.5" r="2.5" fill="#FFFFFF"/>
+  <!-- Nose & Smile -->
+  <ellipse cx="100" cy="122" rx="6" ry="4.5" fill="#18181B"/>
+  <path d="M90 132C95 137 105 137 110 132" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round"/>
+</svg>

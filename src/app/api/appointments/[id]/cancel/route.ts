@@ -8,6 +8,7 @@ import {
   verifyProviderOwnsStaff,
   verifySameOrigin,
 } from "@/lib/api-guard";
+import { emitRealtimeEvent } from "@/lib/realtime-events";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,13 @@ export async function POST(
         data: { isRead: true },
       });
     }
+
+    emitRealtimeEvent({
+      type: "APPOINTMENT_CANCELLED",
+      appointmentId: updated.id,
+      staffId: updated.staffId,
+      cancelledBy: isStaffOrAdmin ? "STAFF" : "CUSTOMER",
+    });
 
     return NextResponse.json({ ok: true, appointment: updated });
   } catch (error: unknown) {

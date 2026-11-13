@@ -5,6 +5,7 @@ import { getCurrentUser, setSessionUserId } from "@/lib/session";
 import { parseDateAndTime, computeAvailableSlotsForStaff } from "@/lib/slot-engine";
 import { verifySameOrigin, safeErrorResponse } from "@/lib/api-guard";
 import { normalizeEmail } from "@/lib/validation/input-validators";
+import { emitRealtimeEvent } from "@/lib/realtime-events";
 import {
   consumeRateLimit,
   getClientIp,
@@ -456,8 +457,18 @@ export async function POST(req: Request) {
         include: {
           service: true,
           staff: true,
+          customer: { select: { name: true } },
         },
       });
+    });
+
+    emitRealtimeEvent({
+      type: "APPOINTMENT_CREATED",
+      appointmentId: newAppointment.id,
+      staffId: newAppointment.staffId,
+      customerName: newAppointment.customer?.name || "Cliente",
+      serviceName: newAppointment.service?.name || "Servicio",
+      startAt: newAppointment.startAt.toISOString(),
     });
 
     return NextResponse.json({ ok: true, appointment: newAppointment });

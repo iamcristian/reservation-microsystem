@@ -15,12 +15,10 @@ import {
   normalizeEmail,
   sanitizeImageOrDataUrl,
 } from "@/lib/validation/input-validators";
+import { getRandomStaffAvatar } from "@/lib/avatars";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
-
-const DEFAULT_STAFF_AVATAR =
-  "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80";
 
 // Solo el ADMIN (Dueño principal) puede dar de alta o revocar personal/doctores
 export async function POST(req: Request) {
@@ -113,7 +111,7 @@ export async function POST(req: Request) {
         userId: staffUser.id,
         displayName,
         specialtyTitle,
-        avatarUrl: avatarUrl || DEFAULT_STAFF_AVATAR,
+        avatarUrl: avatarUrl || getRandomStaffAvatar(),
         isActive: true,
         services: {
           create: targetServiceIds.map((serviceId) => ({

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#5865F2"/>
+      <stop offset="100%" stop-color="#3B45C4"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="100" fill="url(#g1)"/>
+  <circle cx="100" cy="100" r="82" fill="#FFFFFF" fill-opacity="0.1"/>
+  <!-- Headset band -->
+  <path d="M46 106C46 73 70 48 100 48C130 48 154 73 154 106" stroke="#1E1B4B" stroke-width="10" stroke-linecap="round"/>
+  <!-- Bot head -->
+  <rect x="52" y="66" width="96" height="80" rx="34" fill="#FFFFFF"/>
+  <!-- Ear cups -->
+  <rect x="36" y="90" width="20" height="36" rx="10" fill="#312E81"/>
+  <rect x="144" y="90" width="20" height="36" rx="10" fill="#312E81"/>
+  <!-- Visor -->
+  <rect x="64" y="84" width="72" height="32" rx="16" fill="#18181B"/>
+  <!-- Glowing eyes -->
+  <circle cx="84" cy="100" r="7" fill="#38BDF8"/>
+  <circle cx="116" cy="100" r="7" fill="#38BDF8"/>
+  <!-- Smile -->
+  <path d="M88 128C93 134 107 134 112 128" stroke="#4F46E5" stroke-width="5" stroke-linecap="round"/>
+  <!-- Antenna -->
+  <circle cx="100" cy="36" r="8" fill="#A5B4FC"/>
+  <rect x="97" y="42" width="6" height="10" rx="3" fill="#A5B4FC"/>
+</svg>

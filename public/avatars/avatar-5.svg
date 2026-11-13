@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="g5" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#5B21B6"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="100" fill="url(#g5)"/>
+  <!-- Owl / Mage Mascot -->
+  <path d="M52 72L68 48L88 68Z" fill="#DDD6FE"/>
+  <path d="M148 72L132 48L112 68Z" fill="#DDD6FE"/>
+  <circle cx="100" cy="112" r="52" fill="#F5F3FF"/>
+  <!-- Large Owl Eyes -->
+  <circle cx="79" cy="104" r="18" fill="#4C1D95"/>
+  <circle cx="121" cy="104" r="18" fill="#4C1D95"/>
+  <circle cx="79" cy="104" r="10" fill="#FDE047"/>
+  <circle cx="121" cy="104" r="10" fill="#FDE047"/>
+  <circle cx="79" cy="104" r="4.5" fill="#18181B"/>
+  <circle cx="121" cy="104" r="4.5" fill="#18181B"/>
+  <!-- Beak -->
+  <path d="M93 120L100 132L107 120Z" fill="#F59E0B"/>
+</svg>

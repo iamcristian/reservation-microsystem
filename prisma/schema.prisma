@@ -10,14 +10,14 @@ datasource db {
 
 model BusinessSettings {
   id                     Int      @id @default(1)
-  name                   String   @default("Clínica Dental & Estética")
+  name                   String   @default("Mi Negocio")
   tagline                String   @default("Reserva tu cita en segundos")
   logoUrl                String?
-  addressText            String   @default("Av. Principal 450, Consultorio 302")
+  addressText            String   @default("Av. Principal 123, Bolivia")
   googleMapsUrl          String   @default("https://maps.google.com")
-  phoneWhatsapp          String   @default("+5215500000000")
-  currencySymbol         String   @default("$")
-  staffLabel             String   @default("Doctor(a)") // Dynamic terminology: "Doctor(a)" | "Barbero" | "Especialista"
+  phoneWhatsapp          String   @default("+59170000000")
+  currencySymbol         String   @default("Bs")
+  staffLabel             String   @default("Especialista") // Dynamic terminology: "Especialista" | "Doctor(a)" | "Barbero"
   slotStepMin            Int      @default(30)            // Grid interval: 15, 20, 30 min
   bookingHorizonDays     Int      @default(7)             // Booking horizon limit (e.g. 7 days ahead)
   minLeadTimeMinutes     Int      @default(30)            // Minimum lead time before appointment start

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { WhatsAppIcon } from "./WhatsAppIcon";
 import { ClientFooter } from "./client/ClientFooter";
+import { DEFAULT_BUSINESS_LOGO } from "@/lib/avatars";
 import {
   BranchLocationModal,
   CancellationPolicyModal,
@@ -441,7 +442,7 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
     };
   }, [step, selectedService?.id, selectedStaffId, selectedDateStr, applyAvailabilityPayload]);
 
-  // Real-time synchronization of appointments and cancellation notifications when switching tabs or polling
+  // Real-time synchronization via SSE + focus + fallback polling
   useEffect(() => {
     const syncBootstrap = () => {
       if (document.visibilityState === "visible") {
@@ -450,14 +451,41 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
     };
     window.addEventListener("focus", syncBootstrap);
     document.addEventListener("visibilitychange", syncBootstrap);
-    const poll = setInterval(syncBootstrap, 5000);
+    const poll = setInterval(syncBootstrap, 8000);
+
+    let es: EventSource | null = null;
+    if (typeof EventSource !== "undefined") {
+      es = new EventSource("/api/events");
+      es.onmessage = (msg) => {
+        try {
+          const ev = JSON.parse(msg.data);
+          if (ev?.type && ev.type !== "CONNECTED") {
+            onRefresh();
+            if (step === 3 && selectedService?.id && selectedDateStr) {
+              fetch(
+                `/api/availability?serviceId=${selectedService.id}&staffId=${selectedStaffId}&date=${selectedDateStr}&_t=${Date.now()}`,
+                { cache: "no-store" }
+              )
+                .then((res) => (res.ok ? res.json() : null))
+                .then((data) => {
+                  if (data) applyAvailabilityPayload(data);
+                })
+                .catch(() => {});
+            }
+          }
+        } catch {
+          // Ignore keepalive or malformed frames
+        }
+      };
+    }
 
     return () => {
       window.removeEventListener("focus", syncBootstrap);
       document.removeEventListener("visibilitychange", syncBootstrap);
       clearInterval(poll);
+      if (es) es.close();
     };
-  }, [onRefresh]);
+  }, [onRefresh, step, selectedService?.id, selectedStaffId, selectedDateStr, applyAvailabilityPayload]);
 
   const selectedStaffObj = staffList.find((s: any) => s.id === selectedStaffId);
   const horizonDays =
@@ -855,24 +883,18 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
             <div className="flex items-start sm:items-center justify-between gap-2.5 flex-1 min-w-0">
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="w-11 h-11 md:w-14 md:h-14 rounded-full overflow-hidden bg-zinc-200 flex-shrink-0 border border-zinc-300">
-                  {settings?.logoUrl ? (
-                    <img
-                      src={settings.logoUrl}
-                      alt="Logo"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center font-bold text-zinc-600 md:text-lg">
-                      {settings?.name?.slice(0, 2).toUpperCase() || "RC"}
-                    </div>
-                  )}
+                  <img
+                    src={settings?.logoUrl || DEFAULT_BUSINESS_LOGO}
+                    alt={settings?.name || "Logo del negocio"}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
                   <h1 className="font-bold text-base sm:text-lg md:text-xl leading-tight text-[#1F1F23] break-words">
-                    {settings?.name || "Clínica & Reservas"}
+                    {settings?.name || "Mi Negocio"}
                   </h1>
                   <p className="hidden sm:block text-xs md:text-sm text-zinc-600 leading-snug mt-0.5">
-                    {settings?.addressText || "Av. Simón López esq. Av. Beijing, Cochabamba"}
+                    {settings?.addressText || "Av. Principal 123, Bolivia"}
                   </p>
                   <div className="hidden sm:flex mt-1.5 items-center gap-1.5 flex-wrap">
                     <button

@@ -334,21 +334,21 @@ export const getSeoProfile = cache(async (): Promise<SeoProfile> => {
     console.warn("SEO fallback profile used:", err);
   }
 
-  const businessName = settings?.name?.trim() || "Clínica Dental";
+  const businessName = settings?.name?.trim() || "Mi Negocio";
   const tagline =
     settings?.tagline?.trim() || "Reserva tu cita en línea en menos de 30 segundos";
   const addressText =
-    settings?.addressText?.trim() || "Av. Simón López esq. Av. Beijing, Cochabamba, Bolivia";
+    settings?.addressText?.trim() || "Av. Principal 123, Bolivia";
   const googleMapsUrl =
     settings?.googleMapsUrl?.trim() ||
-    "https://www.google.com/maps/search/?api=1&query=-17.3713,-66.1742";
+    "https://www.google.com/maps/search/?api=1&query=-17.3895,-66.1568";
   const coordinates = parseCoordinatesFromUrl(googleMapsUrl);
   const { locality, countryCode } = extractLocationHints(addressText);
-  const phoneWhatsapp = settings?.phoneWhatsapp?.trim() || "+591 4 4450000";
-  const telephoneClean = phoneWhatsapp.replace(/[^\d+]/g, "") || "+59144450000";
+  const phoneWhatsapp = settings?.phoneWhatsapp?.trim() || "+59170000000";
+  const telephoneClean = phoneWhatsapp.replace(/[^\d+]/g, "") || "+59170000000";
   const currencySymbol = settings?.currencySymbol?.trim() || "Bs";
   const currencyCode = resolveCurrencyCode(currencySymbol);
-  const staffLabel = settings?.staffLabel?.trim() || "Doctor(a)";
+  const staffLabel = settings?.staffLabel?.trim() || "Especialista";
   const themePrimaryHex = sanitizeHex(settings?.themePrimaryHex, "#1F1F23");
   const themeSurfaceHex = sanitizeHex(settings?.themeSurfaceHex, "#9FA0A6");
 

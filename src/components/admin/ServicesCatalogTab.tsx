@@ -75,9 +75,7 @@ export function ServicesCatalogTab({
                     </div>
                   )}
                   <div className="text-zinc-500 text-[11px] mt-0.5 font-medium">
-                    ⏱️ {svc.durationMin} min{" "}
-                    {(svc.bufferAfterMin ?? 0) > 0 &&
-                      `(+${svc.bufferAfterMin} min limpieza)`}
+                    ⏱️ {svc.durationMin} min
                   </div>
                 </div>
 

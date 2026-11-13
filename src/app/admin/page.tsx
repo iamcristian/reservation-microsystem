@@ -114,7 +114,7 @@ export default function AdminPage() {
               Panel de Profesionales y Administración
             </h1>
             <p className="text-xs text-zinc-500">
-              {data?.settings?.name || "Clínica & Reservas"} • Acceso restringido a personal autorizado
+              {data?.settings?.name || "Mi Negocio"} • Acceso restringido a personal autorizado
             </p>
           </div>
 
@@ -162,7 +162,7 @@ export default function AdminPage() {
                   required
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="ejemplo@sonrisa.com"
+                  placeholder="correo@negocio.com"
                   className="bg-transparent font-semibold text-base sm:text-sm text-[#1F1F23] focus:outline-none w-full mt-0.5"
                 />
               </div>
@@ -234,7 +234,7 @@ export default function AdminPage() {
       <header className="bg-[#1F1F23] text-white text-xs px-3 sm:px-4 py-2 min-h-[44px] flex items-center justify-between gap-2 z-50 sticky top-0 shadow-md">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <span className="font-bold tracking-tight text-white hidden sm:inline truncate max-w-[180px]">
-            {data?.settings?.name || "Clínica & Reservas"}
+            {data?.settings?.name || "Mi Negocio"}
           </span>
           <span className="hidden sm:inline text-zinc-500">|</span>
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
@@ -247,7 +247,7 @@ export default function AdminPage() {
             <span className="hidden sm:inline-flex bg-white/10 text-zinc-300 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
               {currentUser.role === "ADMIN"
                 ? "Administrador"
-                : data?.settings?.staffLabel || "Doctor(a)"}
+                : data?.settings?.staffLabel || "Especialista"}
             </span>
           </div>
         </div>

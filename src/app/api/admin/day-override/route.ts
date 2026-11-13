@@ -8,6 +8,7 @@ import {
   validateScheduleOverride,
   validateVacationRange,
 } from "@/lib/validation/acceptance-criteria";
+import { emitRealtimeEvent } from "@/lib/realtime-events";
 
 export const dynamic = "force-dynamic";
 
@@ -293,6 +294,8 @@ export async function POST(req: Request) {
       createdTimeOffs.push(created);
     }
 
+    emitRealtimeEvent({ type: "SCHEDULE_UPDATED" });
+
     return NextResponse.json({
       ok: true,
       timeOff: createdTimeOffs[0] || null,
@@ -342,6 +345,8 @@ export async function DELETE(req: Request) {
     }
 
     await prisma.timeOff.delete({ where: { id } });
+
+    emitRealtimeEvent({ type: "SCHEDULE_UPDATED" });
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {

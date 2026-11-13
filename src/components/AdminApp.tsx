@@ -32,6 +32,12 @@ import { ServicesCatalogTab } from "./admin/ServicesCatalogTab";
 import { CustomerControlTab } from "./admin/CustomerControlTab";
 import { compressImageFileToDataUrl } from "@/lib/image-utils";
 import {
+  DEFAULT_BUSINESS_LOGO,
+  DEFAULT_STAFF_AVATAR,
+  STAFF_AVATAR_PRESETS,
+  getRandomStaffAvatar,
+} from "@/lib/avatars";
+import {
   buildCustomerCancellationWhatsAppUrl,
   buildCustomerNoShowWhatsAppUrl,
   buildStaffInviteWhatsAppUrl,
@@ -372,6 +378,24 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
     }
   };
 
+  // Change Staff Avatar Icon
+  const handleChangeStaffAvatar = async (staffObj: any) => {
+    const nextAvatar = getRandomStaffAvatar(staffObj.avatarUrl);
+    try {
+      const res = await fetch("/api/admin/staff", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffId: staffObj.id, avatarUrl: nextAvatar }),
+      });
+      if (res.ok) {
+        showToast("success", "Icono actualizado", `Se asignó un nuevo icono ilustrado a ${staffObj.displayName}.`);
+        onRefresh();
+      }
+    } catch (e: any) {
+      showToast("error", "Error", e.message);
+    }
+  };
+
   // Toggle Doctor Active / Vacation mode
   const handleToggleStaffActive = async (staffId: string, newActiveState: boolean) => {
     try {
@@ -616,6 +640,68 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
       setAllAppointments(initialData.allAppointments);
     }
   }, [initialData?.allAppointments]);
+
+  const latestOnRefreshRef = React.useRef(onRefresh);
+  latestOnRefreshRef.current = onRefresh;
+  const latestShowToastRef = React.useRef(showToast);
+  latestShowToastRef.current = showToast;
+
+  // Real-time synchronization via Server-Sent Events (SSE) + focus + fallback polling
+  useEffect(() => {
+    const triggerRefresh = () => {
+      if (document.visibilityState === "visible") {
+        latestOnRefreshRef.current();
+      }
+    };
+    window.addEventListener("focus", triggerRefresh);
+    document.addEventListener("visibilitychange", triggerRefresh);
+    const poll = setInterval(triggerRefresh, 8000);
+
+    let es: EventSource | null = null;
+    if (typeof EventSource !== "undefined") {
+      es = new EventSource("/api/events");
+      es.onmessage = (msg) => {
+        try {
+          const ev = JSON.parse(msg.data);
+          if (!ev?.type || ev.type === "CONNECTED") return;
+
+          latestOnRefreshRef.current();
+
+          if (ev.type === "APPOINTMENT_CREATED") {
+            const timeLabel = ev.startAt
+              ? new Date(ev.startAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "";
+            latestShowToastRef.current(
+              "info",
+              "🔔 ¡Nueva cita registrada!",
+              `${ev.customerName || "Un cliente"} agendó ${ev.serviceName || "un servicio"}${timeLabel ? ` a las ${timeLabel}` : ""}.`
+            );
+          } else if (
+            ev.type === "APPOINTMENT_CANCELLED" &&
+            ev.cancelledBy === "CUSTOMER"
+          ) {
+            latestShowToastRef.current(
+              "warning",
+              "Cita cancelada por el cliente",
+              "El horario ha quedado libre nuevamente en tu agenda."
+            );
+          }
+        } catch {
+          // Ignore keepalive or malformed frames
+        }
+      };
+    }
+
+    return () => {
+      window.removeEventListener("focus", triggerRefresh);
+      document.removeEventListener("visibilitychange", triggerRefresh);
+      clearInterval(poll);
+      if (es) es.close();
+    };
+  }, []);
 
   // Derive dayAppointments reactively and deterministically from allAppointments
   const dayAppointments = useMemo(() => {
@@ -1102,10 +1188,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-11 h-11 rounded-full overflow-hidden border border-zinc-300 bg-zinc-100 flex-shrink-0 shadow-xs">
             <img
-              src={
-                settings?.logoUrl ||
-                "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=200&auto=format&fit=crop&q=80"
-              }
+              src={settings?.logoUrl || DEFAULT_BUSINESS_LOGO}
               alt={settings?.name || "Logo"}
               className="w-full h-full object-cover"
             />
@@ -1121,14 +1204,14 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
               >
                 {isOwnerAdmin
                   ? "👑 ADMIN / DUEÑO PRINCIPAL"
-                  : "🩺 MODO EMPLEADO / DOCTOR"}
+                  : "🩺 MODO PROFESIONAL"}
               </span>
               <span className="text-xs font-semibold text-zinc-600 truncate">
-                {currentUser?.name || "Dr. Alejandro"}
+                {currentUser?.name || "Admin"}
               </span>
             </div>
             <h1 className="font-bold text-base tracking-tight text-[#1F1F23] mt-0.5 truncate">
-              {settings?.name || "Clínica & Reservas"}
+              {settings?.name || "Mi Negocio"}
             </h1>
           </div>
         </div>
@@ -2744,8 +2827,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                   email: "",
                   phone: "+591",
                   bio: "",
-                  avatarUrl:
-                    "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=300&auto=format&fit=crop&q=80",
+                  avatarUrl: getRandomStaffAvatar(),
                   serviceIds: services.map((s: any) => s.id),
                 })
               }
@@ -2774,12 +2856,9 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <img
-                        src={
-                          st.avatarUrl ||
-                          "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=200&auto=format&fit=crop&q=80"
-                        }
+                        src={st.avatarUrl || DEFAULT_STAFF_AVATAR}
                         alt={st.displayName}
-                        className="w-12 h-12 rounded-full object-cover border border-zinc-300"
+                        className="w-12 h-12 rounded-full object-cover border border-zinc-300 bg-zinc-100"
                       />
                       <div>
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -2967,6 +3046,15 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
 
                       <button
                         type="button"
+                        onClick={() => handleChangeStaffAvatar(st)}
+                        className="px-3 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all shadow-2xs"
+                        title="Cambiar a otro icono ilustrado aleatorio"
+                      >
+                        🎲 Cambiar icono
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleToggleStaffActive(st.id, !st.isActive)}
                         className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer ${
                           st.isActive
@@ -3018,7 +3106,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
         <ServicesCatalogTab
           services={services}
           staffList={staffList}
-          currencySymbol={settings?.currencySymbol || "$"}
+          currencySymbol={settings?.currencySymbol || "Bs"}
           onOpenNewService={() =>
             setServiceModal({
               name: "",
@@ -3087,7 +3175,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                     Logo e Identidad Visual del Local
                   </label>
                   <p className="text-[11px] text-zinc-500">
-                    Sube tu propio logo o elige un icono rápido por rubro. Se actualiza en toda la app.
+                    Sube el logo de tu negocio. Si no subes uno, se mostrará el icono de negocio por defecto.
                   </p>
                 </div>
               </div>
@@ -3095,20 +3183,17 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
               <div className="flex items-center gap-4 bg-white p-3 rounded-2xl border border-zinc-200 shadow-2xs">
                 <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[#1F1F23] bg-zinc-100 flex-shrink-0 shadow-sm">
                   <img
-                    src={
-                      settingsForm?.logoUrl ||
-                      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=200&auto=format&fit=crop&q=80"
-                    }
+                    src={settingsForm?.logoUrl || DEFAULT_BUSINESS_LOGO}
                     alt="Vista previa del logo"
                     className="w-full h-full object-cover"
                   />
                 </div>
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <div className="text-xs font-bold text-zinc-900 truncate">
-                    {settingsForm?.name || "Nombre del Negocio"}
+                    {settingsForm?.name || "Mi Negocio"}
                   </div>
                   <div className="text-[11px] text-zinc-500 truncate">
-                    {settingsForm?.tagline || "Subtítulo del negocio"}
+                    {settingsForm?.tagline || "Reserva tu cita en segundos"}
                   </div>
                   <div className="flex flex-wrap gap-1.5 pt-0.5">
                     <label className="cursor-pointer px-3 py-1.5 rounded-full bg-[#1F1F23] hover:bg-black text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-xs transition-all">
@@ -3120,65 +3205,23 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                         className="hidden"
                       />
                     </label>
+                    {settingsForm?.logoUrl &&
+                      settingsForm.logoUrl !== DEFAULT_BUSINESS_LOGO && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSettingsForm({
+                              ...settingsForm,
+                              logoUrl: DEFAULT_BUSINESS_LOGO,
+                            })
+                          }
+                          className="px-3 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[11px] font-semibold transition-all"
+                        >
+                          Usar icono por defecto
+                        </button>
+                      )}
                   </div>
                 </div>
-              </div>
-
-              {/* Presets rápidos de rubro */}
-              <div>
-                <span className="text-[10px] font-bold text-zinc-500 uppercase block mb-1.5">
-                  O elige una imagen rápida según tu rubro:
-                </span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                  {[
-                    {
-                      label: "🦷 Dental",
-                      url: "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=200&auto=format&fit=crop&q=80",
-                    },
-                    {
-                      label: "🩺 Médico",
-                      url: "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?w=200&auto=format&fit=crop&q=80",
-                    },
-                    {
-                      label: "💈 Barbería",
-                      url: "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=200&auto=format&fit=crop&q=80",
-                    },
-                    {
-                      label: "✨ Estética",
-                      url: "https://images.unsplash.com/photo-1560750588-73207b1ef5b8?w=200&auto=format&fit=crop&q=80",
-                    },
-                  ].map((preset) => (
-                    <button
-                      key={preset.label}
-                      type="button"
-                      onClick={() =>
-                        setSettingsForm({ ...settingsForm, logoUrl: preset.url })
-                      }
-                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all ${
-                        settingsForm?.logoUrl === preset.url
-                          ? "bg-[#1F1F23] text-white border-[#1F1F23]"
-                          : "bg-white text-zinc-800 border-zinc-300 hover:bg-zinc-100"
-                      }`}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-zinc-500 uppercase block">
-                  URL directa del Logo (opcional)
-                </label>
-                <input
-                  type="url"
-                  value={settingsForm?.logoUrl || ""}
-                  onChange={(e) =>
-                    setSettingsForm({ ...settingsForm, logoUrl: e.target.value })
-                  }
-                  placeholder="https://..."
-                  className="mt-1 w-full bg-white border border-zinc-300 rounded-xl px-3 py-2 text-base sm:text-xs text-zinc-800 focus:outline-none"
-                />
               </div>
             </div>
 
@@ -3221,7 +3264,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                   onChange={(e) =>
                     setSettingsForm({ ...settingsForm, staffLabel: e.target.value })
                   }
-                  placeholder="Doctor(a) / Barbero"
+                  placeholder="Especialista / Profesional"
                   className="bg-transparent font-medium text-base sm:text-xs text-[#1F1F23] focus:outline-none w-full"
                 />
               </div>
@@ -3232,7 +3275,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                 </label>
                 <input
                   type="text"
-                  value={settingsForm?.currencySymbol || "$"}
+                  value={settingsForm?.currencySymbol || "Bs"}
                   onChange={(e) =>
                     setSettingsForm({
                       ...settingsForm,
@@ -3437,11 +3480,11 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                       className="w-5 h-5 rounded-md border border-zinc-200 object-cover"
                     />
                     <span className="text-[11px] text-zinc-600 truncate">
-                      {settingsForm?.name || "Clínica Dental"}
+                      {settingsForm?.name || "Mi Negocio"}
                     </span>
                   </div>
                   <div className="text-sm font-semibold text-[#1a0dab] leading-snug line-clamp-1">
-                    {`${settingsForm?.name || "Clínica Dental"} | Reserva tu Cita Online`}
+                    {`${settingsForm?.name || "Mi Negocio"} | Reserva tu Cita Online`}
                   </div>
                   <p className="text-[11px] text-zinc-600 leading-relaxed line-clamp-2">
                     {`${settingsForm?.tagline || "Reserva tu cita en línea en segundos"}. Agenda tu turno con confirmación inmediata en ${settingsForm?.addressText || "tu ciudad"}.`}
@@ -4003,7 +4046,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                   onChange={(e) =>
                     setServiceModal({ ...serviceModal, name: e.target.value })
                   }
-                  placeholder="Ej. Corte Fade + Barba"
+                  placeholder="Ej. Consulta General / Servicio Principal"
                   className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-semibold text-base sm:text-sm focus:outline-none"
                 />
               </div>
@@ -4045,41 +4088,21 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-zinc-500 uppercase block">
-                    Buffer Limpieza (min)
+                    Precio ({settings?.currencySymbol || "Bs"})
                   </label>
                   <input
                     type="number"
-                    value={serviceModal.bufferAfterMin}
+                    step="0.5"
+                    value={serviceModal.price}
                     onChange={(e) =>
                       setServiceModal({
                         ...serviceModal,
-                        bufferAfterMin: Number(e.target.value),
+                        price: Number(e.target.value),
                       })
                     }
                     className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-base sm:text-sm focus:outline-none"
                   />
-                  <span className="text-[10px] text-zinc-400 block mt-1 leading-tight">
-                    Usa 0 min para citas continuas (ej. 9:00 y 9:30).
-                  </span>
                 </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-zinc-500 uppercase block">
-                  Precio ({settings?.currencySymbol || "$"})
-                </label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={serviceModal.price}
-                  onChange={(e) =>
-                    setServiceModal({
-                      ...serviceModal,
-                      price: Number(e.target.value),
-                    })
-                  }
-                  className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-bold text-base sm:text-sm focus:outline-none"
-                />
               </div>
 
               {/* ASIGNACIÓN DE ESPECIALISTAS / DOCTORES QUE REALIZAN ESTE SERVICIO */}
@@ -4222,7 +4245,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                   onChange={(e) =>
                     setStaffModal({ ...staffModal, displayName: e.target.value })
                   }
-                  placeholder="Ej. Dr. Marcos Paz / Lic. Valeria"
+                  placeholder="Ej. Lic. Marcos Paz / Valeria"
                   className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 font-semibold text-base sm:text-sm focus:outline-none"
                 />
               </div>
@@ -4237,7 +4260,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                   onChange={(e) =>
                     setStaffModal({ ...staffModal, specialty: e.target.value })
                   }
-                  placeholder="Ej. Ortodoncia y Rehabilitación"
+                  placeholder="Ej. Especialista Principal / Atención General"
                   className="mt-1 w-full p-2.5 rounded-2xl border border-zinc-300 text-base sm:text-xs font-medium focus:outline-none"
                 />
               </div>
@@ -4276,31 +4299,41 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
               </div>
 
               <div>
-                <label className="text-[10px] font-bold text-zinc-600 uppercase block mb-1">
-                  Foto de Perfil Rápida
-                </label>
-                <div className="flex items-center gap-2">
-                  {[
-                    "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=300&auto=format&fit=crop&q=80",
-                    "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=300&auto=format&fit=crop&q=80",
-                    "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=300&auto=format&fit=crop&q=80",
-                    "https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=300&auto=format&fit=crop&q=80",
-                  ].map((url) => (
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-bold text-zinc-600 uppercase block">
+                    Icono de Perfil (Estilo Ilustrado)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setStaffModal({
+                        ...staffModal,
+                        avatarUrl: getRandomStaffAvatar(staffModal.avatarUrl),
+                      })
+                    }
+                    className="px-2 py-0.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[10px] font-bold transition-all"
+                  >
+                    🎲 Aleatorio
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {STAFF_AVATAR_PRESETS.map((preset) => (
                     <button
-                      key={url}
+                      key={preset.id}
                       type="button"
                       onClick={() =>
-                        setStaffModal({ ...staffModal, avatarUrl: url })
+                        setStaffModal({ ...staffModal, avatarUrl: preset.url })
                       }
-                      className={`w-11 h-11 rounded-full overflow-hidden border-2 transition-all ${
-                        staffModal.avatarUrl === url
+                      title={preset.label}
+                      className={`w-11 h-11 rounded-full overflow-hidden border-2 transition-all bg-zinc-100 ${
+                        staffModal.avatarUrl === preset.url
                           ? "border-[#1F1F23] scale-105 shadow-md"
-                          : "border-transparent opacity-70 hover:opacity-100"
+                          : "border-transparent opacity-75 hover:opacity-100"
                       }`}
                     >
                       <img
-                        src={url}
-                        alt="Avatar"
+                        src={preset.url}
+                        alt={preset.label}
                         className="w-full h-full object-cover"
                       />
                     </button>
@@ -4352,7 +4385,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
                             </span>
                           </div>
                           <span className="text-[10px] text-zinc-500 font-semibold">
-                            {settings?.currencySymbol || "$"}
+                            {settings?.currencySymbol || "Bs"}
                             {svc.price}
                           </span>
                         </label>

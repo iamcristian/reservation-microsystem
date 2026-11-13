@@ -12,7 +12,7 @@ export async function buildBrandIconResponse(
   options: { rounded?: boolean } = {}
 ) {
   const profile = await getSeoProfile().catch(() => null);
-  const businessName = profile?.businessName || "Clínica & Reservas";
+  const businessName = profile?.businessName || "Mi Negocio";
   const primaryHex = profile?.themePrimaryHex || "#1F1F23";
   const initials = getBrandInitials(businessName);
   const logoDataUri = await resolveSatoriImageDataUri(profile?.logoUrl);
@@ -105,12 +105,12 @@ export async function buildBrandIconResponse(
 
 export async function buildOpenGraphResponse() {
   const profile = await getSeoProfile().catch(() => null);
-  const businessName = profile?.businessName || "Clínica Dental";
+  const businessName = profile?.businessName || "Mi Negocio";
   const tagline = profile?.tagline || "Reserva tu cita en línea en menos de 30 segundos";
   const addressText =
-    profile?.addressText || "Av. Simón López esq. Av. Beijing, Cochabamba, Bolivia";
+    profile?.addressText || "Av. Principal 123, Bolivia";
   const locality = profile?.locality || "Cochabamba";
-  const staffLabel = profile?.staffLabel || "Doctor(a)";
+  const staffLabel = profile?.staffLabel || "Especialista";
   const currencySymbol = profile?.currencySymbol || "Bs";
   const primaryHex = profile?.themePrimaryHex || "#1F1F23";
   const services = profile?.services || [];

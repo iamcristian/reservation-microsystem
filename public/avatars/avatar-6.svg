@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="g6" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#0369A1"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="100" fill="url(#g6)"/>
+  <circle cx="100" cy="104" r="76" fill="#FFFFFF" fill-opacity="0.1"/>
+  <!-- Wolf / Shiba Ears -->
+  <path d="M50 96L54 44L90 74Z" fill="#E0F2FE"/>
+  <path d="M150 96L146 44L110 74Z" fill="#E0F2FE"/>
+  <!-- Head -->
+  <ellipse cx="100" cy="114" rx="52" ry="44" fill="#FFFFFF"/>
+  <!-- Forehead mark -->
+  <path d="M92 78L100 94L108 78Z" fill="#38BDF8"/>
+  <!-- Happy Eyes -->
+  <path d="M70 108C74 100 84 100 88 108" stroke="#0F172A" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M112 108C116 100 126 100 130 108" stroke="#0F172A" stroke-width="5.5" stroke-linecap="round"/>
+  <!-- Nose & Smile -->
+  <ellipse cx="100" cy="122" rx="6" ry="4.5" fill="#0F172A"/>
+  <path d="M90 132C95 137 105 137 110 132" stroke="#0284C7" stroke-width="4.5" stroke-linecap="round"/>
+</svg>

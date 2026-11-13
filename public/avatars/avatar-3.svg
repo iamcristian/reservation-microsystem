@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="g3" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="100" fill="url(#g3)"/>
+  <!-- Astro Helmet -->
+  <circle cx="100" cy="104" r="64" fill="#ECFDF5" fill-opacity="0.22" stroke="#ECFDF5" stroke-width="5"/>
+  <!-- Cat Ears -->
+  <path d="M56 88L60 52L86 72Z" fill="#FFFFFF"/>
+  <path d="M144 88L140 52L114 72Z" fill="#FFFFFF"/>
+  <!-- Face -->
+  <circle cx="100" cy="108" r="46" fill="#FFFFFF"/>
+  <!-- Visor Tint -->
+  <rect x="64" y="88" width="72" height="30" rx="15" fill="#064E3B"/>
+  <!-- Star Eyes -->
+  <circle cx="82" cy="103" r="6.5" fill="#34D399"/>
+  <circle cx="118" cy="103" r="6.5" fill="#34D399"/>
+  <!-- Cute Whiskers / Smile -->
+  <path d="M93 126C97 130 103 130 107 126" stroke="#059669" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="72" cy="122" r="5" fill="#A7F3D0"/>
+  <circle cx="128" cy="122" r="5" fill="#A7F3D0"/>
+</svg>

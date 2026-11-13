@@ -9,6 +9,7 @@ import {
   verifySameOrigin,
 } from "@/lib/api-guard";
 import { VALID_APPOINTMENT_STATUSES } from "@/lib/validation/input-validators";
+import { emitRealtimeEvent } from "@/lib/realtime-events";
 
 export const dynamic = "force-dynamic";
 
@@ -145,6 +146,13 @@ export async function PUT(
       }
 
       return { updated, finalCustomer };
+    });
+
+    emitRealtimeEvent({
+      type: "APPOINTMENT_UPDATED",
+      appointmentId: result.updated.id,
+      staffId: result.updated.staffId,
+      status,
     });
 
     return NextResponse.json({
