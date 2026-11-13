@@ -93,14 +93,28 @@ function formatShortTime(d: Date): string {
 }
 
 export function isTimeOffOnDate(
-  timeOff: { startAt: Date | string; endAt: Date | string },
+  timeOff: { type?: string; startAt: Date | string; endAt: Date | string },
   dateStr: string
 ): boolean {
-  const dayStart = new Date(`${dateStr}T00:00:00`).getTime();
-  const dayEnd = new Date(`${dateStr}T23:59:59.999`).getTime();
   const s = new Date(timeOff.startAt).getTime();
   const e = new Date(timeOff.endAt).getTime();
-  return !Number.isNaN(s) && !Number.isNaN(e) && s <= dayEnd && e >= dayStart;
+  if (Number.isNaN(s) || Number.isNaN(e) || e < s) return false;
+
+  const durationMs = e - s;
+  const isFullOrMultiDay =
+    timeOff.type === "FULL_DAY_OFF" ||
+    timeOff.type === "VACATION" ||
+    durationMs >= 20 * 60 * 60 * 1000;
+
+  if (isFullOrMultiDay) {
+    const startYmd = formatLocalDateYYYYMMDD(new Date(s + 6 * 3600_000));
+    const endYmd = formatLocalDateYYYYMMDD(
+      new Date(Math.max(s, e - 6 * 3600_000))
+    );
+    return dateStr >= startYmd && dateStr <= endYmd;
+  }
+
+  return formatLocalDateYYYYMMDD(new Date((s + e) / 2)) === dateStr;
 }
 
 /**
@@ -134,8 +148,6 @@ export function describeTimeOffBlock(block: {
 
   const start = new Date(block.startAt);
   const end = new Date(block.endAt);
-  const startYmd = formatLocalDateYYYYMMDD(start);
-  const endYmd = formatLocalDateYYYYMMDD(end);
   const isFullSpan =
     blockType === "VACATION" ||
     blockType === "FULL_DAY_OFF" ||
@@ -144,12 +156,21 @@ export function describeTimeOffBlock(block: {
       end.getHours() === 23 &&
       end.getMinutes() >= 58);
 
+  const displayStart = isFullSpan
+    ? new Date(start.getTime() + 6 * 3600_000)
+    : start;
+  const displayEnd = isFullSpan
+    ? new Date(Math.max(start.getTime(), end.getTime() - 6 * 3600_000))
+    : end;
+  const startYmd = formatLocalDateYYYYMMDD(displayStart);
+  const endYmd = formatLocalDateYYYYMMDD(displayEnd);
+
   let periodLabel: string;
   if (isFullSpan) {
     periodLabel =
       startYmd === endYmd
-        ? `Todo el día (${formatShortLocalDate(start)})`
-        : `Del ${formatShortLocalDate(start)} al ${formatShortLocalDate(end)}`;
+        ? `Todo el día (${formatShortLocalDate(displayStart)})`
+        : `Del ${formatShortLocalDate(displayStart)} al ${formatShortLocalDate(displayEnd)}`;
   } else if (blockType === "LATE_START") {
     periodLabel = `Atención inicia a partir de las ${formatShortTime(end)}`;
   } else if (blockType === "EARLY_LEAVE") {

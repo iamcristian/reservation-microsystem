@@ -74,6 +74,12 @@ const EMPTY_STATE_THEMES: Record<
     divider: "border-amber-200/80",
     emoji: "⏳",
   },
+  NO_WORKING_SHIFT: {
+    box: "bg-zinc-100/90 border-zinc-300 text-zinc-800",
+    title: "text-zinc-900",
+    divider: "border-zinc-200",
+    emoji: "🌙",
+  },
 };
 
 const DEFAULT_EMPTY_THEME: {
@@ -1632,6 +1638,16 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                             );
                             const hasClosedBadge =
                               !hasVacationBadge && matchingFullBlocks.length > 0;
+                            const itemDayOfWeek = new Date(
+                              `${item.dateStr}T12:00:00`
+                            ).getDay();
+                            const hasWorkingShiftOnDay =
+                              calendarTargetStaff.length === 0 ||
+                              calendarTargetStaff.some((st: any) =>
+                                (st.workingShifts || []).some(
+                                  (ws: any) => ws.dayOfWeek === itemDayOfWeek
+                                )
+                              );
 
                             return (
                               <button
@@ -1649,19 +1665,29 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                                 <span className="text-sm font-extrabold mt-0.5">
                                   {item.dayNumber}
                                 </span>
-                                {(hasVacationBadge || hasClosedBadge) && (
+                                {(hasVacationBadge ||
+                                  hasClosedBadge ||
+                                  !hasWorkingShiftOnDay) && (
                                   <span
                                     className={`text-[9px] font-bold mt-0.5 leading-none whitespace-nowrap ${
                                       isSelected
                                         ? hasVacationBadge
                                           ? "text-amber-300"
-                                          : "text-rose-300"
+                                          : hasClosedBadge
+                                          ? "text-rose-300"
+                                          : "text-zinc-300"
                                         : hasVacationBadge
                                         ? "text-amber-800"
-                                        : "text-rose-700"
+                                        : hasClosedBadge
+                                        ? "text-rose-700"
+                                        : "text-zinc-500"
                                     }`}
                                   >
-                                    {hasVacationBadge ? "🏖️ Vacac." : "⛔ Cerrado"}
+                                    {hasVacationBadge
+                                      ? "🏖️ Vacac."
+                                      : hasClosedBadge
+                                      ? "⛔ Cerrado"
+                                      : "🌙 No laboral"}
                                   </span>
                                 )}
                               </button>
@@ -1726,6 +1752,26 @@ export function ClientApp({ initialData, onRefresh }: ClientAppProps) {
                           <p className={`font-bold text-sm ${theme.title}`}>
                             {heading}
                           </p>
+
+                          {blocks.length === 0 &&
+                            unavailableReason?.code === "NO_WORKING_SHIFT" && (
+                              <div className="mt-3 text-left max-w-md mx-auto">
+                                <div className="p-3 rounded-xl bg-white/90 border border-zinc-200/80 shadow-2xs flex items-center justify-between gap-2 flex-wrap text-xs font-bold text-zinc-900">
+                                  <span>🌙 Día no laboral (Horario semanal)</span>
+                                  <span className="text-[11px] font-semibold text-zinc-600">
+                                    📅 Descanso habitual (
+                                    {new Date(
+                                      `${selectedDateStr}T12:00:00`
+                                    ).toLocaleDateString("es-ES", {
+                                      weekday: "short",
+                                      day: "numeric",
+                                      month: "short",
+                                    })}
+                                    )
+                                  </span>
+                                </div>
+                              </div>
+                            )}
 
                           {blocks.length > 0 && (
                             <div className="mt-3 space-y-2 text-left max-w-md mx-auto">

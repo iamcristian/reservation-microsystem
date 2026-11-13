@@ -10,6 +10,7 @@ import {
   AvailabilityUnavailableReason,
   PublicTimeOffNotice,
   WEEKDAY_NAMES_PLURAL,
+  isTimeOffOnDate,
 } from "@/lib/timeoff-utils";
 
 export const dynamic = "force-dynamic";
@@ -63,8 +64,34 @@ function buildUnavailableReason(params: {
     if (b.type === "FULL_DAY_OFF") return true;
     const s = new Date(b.startAt);
     const e = new Date(b.endAt);
-    return s.getHours() === 0 && s.getMinutes() === 0 && e.getHours() >= 23 && e.getMinutes() >= 58;
+    const durationMs = e.getTime() - s.getTime();
+    return (
+      durationMs >= 20 * 60 * 60 * 1000 ||
+      (s.getHours() === 0 && s.getMinutes() === 0 && e.getHours() >= 23 && e.getMinutes() >= 58)
+    );
   });
+
+  if (!anyWithinHorizon) {
+    return {
+      code: "OUTSIDE_HORIZON",
+      title: "Fecha fuera del rango habilitado",
+      description: `Se habilitan reservas hasta con ${maxHorizon} días de anticipación. Por favor elige una fecha más cercana.`,
+    };
+  }
+
+  if (!anyHasShiftOnWeekday && fullDayBlocks.length === 0) {
+    const weekdayPlural = WEEKDAY_NAMES_PLURAL[dayOfWeek] || "ese día";
+    return {
+      code: "NO_WORKING_SHIFT",
+      title: isSingleStaff
+        ? `${subject} no tiene atención los ${weekdayPlural}`
+        : `Día no laboral (Sin atención los ${weekdayPlural})`,
+      description: isSingleStaff
+        ? `Según su horario semanal, ${subject} no atiende los ${weekdayPlural}. Por favor selecciona otra fecha disponible en el calendario.`
+        : `Según el horario semanal, no hay atención programada los ${weekdayPlural}. Por favor selecciona otra fecha disponible en el calendario.`,
+    };
+  }
+
   if (fullDayBlocks.length > 0) {
     return {
       code: "FULL_DAY_OFF",
@@ -86,25 +113,6 @@ function buildUnavailableReason(params: {
       description:
         "Los turnos de esta fecha quedaron cubiertos por bloqueos programados o reservas previas. Por favor elige otra fecha disponible en el calendario.",
       blocks: dayTimeOffNotices,
-    };
-  }
-
-  if (!anyWithinHorizon) {
-    return {
-      code: "OUTSIDE_HORIZON",
-      title: "Fecha fuera del rango habilitado",
-      description: `Se habilitan reservas hasta con ${maxHorizon} días de anticipación. Por favor elige una fecha más cercana.`,
-    };
-  }
-
-  if (!anyHasShiftOnWeekday) {
-    const weekdayPlural = WEEKDAY_NAMES_PLURAL[dayOfWeek] || "esa fecha";
-    return {
-      code: "NO_WORKING_SHIFT",
-      title: "Sin cupos disponibles en esta fecha.",
-      description: isSingleStaff
-        ? `${subject} no tiene atención regular programada los ${weekdayPlural}. Por favor elige otra fecha disponible en el calendario.`
-        : `No hay atención regular programada los ${weekdayPlural}. Por favor elige otra fecha disponible en el calendario.`,
     };
   }
 
@@ -260,8 +268,8 @@ export async function GET(req: Request) {
       prisma.timeOff.findMany({
         where: {
           staffId: { in: eligibleStaffIds },
-          startAt: { lte: nextMorning },
-          endAt: { gte: startOfDay },
+          startAt: { lte: new Date(endOfDay.getTime() + 12 * 3600_000) },
+          endAt: { gte: new Date(startOfDay.getTime() - 12 * 3600_000) },
         },
         orderBy: { startAt: "asc" },
       }),
@@ -312,8 +320,8 @@ export async function GET(req: Request) {
       if (hasValidShift) anyHasShiftOnWeekday = true;
 
       const staffTimeOffs = timeOffs.filter((t) => t.staffId === sId);
-      const staffDayTimeOffs = staffTimeOffs.filter(
-        (t) => t.startAt <= endOfDay && t.endAt >= startOfDay
+      const staffDayTimeOffs = staffTimeOffs.filter((t) =>
+        isTimeOffOnDate(t, dateStr)
       );
       for (const t of staffDayTimeOffs) {
         dayTimeOffNotices.push({
@@ -336,7 +344,7 @@ export async function GET(req: Request) {
       const availableForStaff = computeAvailableSlotsForStaff({
         dateStr,
         shifts: staffShifts,
-        timeOffs: staffTimeOffs,
+        timeOffs: staffDayTimeOffs,
         appointments: staffAppointments,
         serviceDuration: totalServiceDuration,
         slotStepMin: slotStep,

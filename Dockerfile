@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for Next.js + Prisma + SQLite on Node 26 (AMD64 & ARM64 / Oracle Cloud Ampere)
 FROM node:26-alpine AS base
-RUN apk add --no-cache libc6-compat openssl
+RUN apk add --no-cache libc6-compat openssl tzdata
 
 FROM base AS deps
 WORKDIR /app
@@ -24,6 +24,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV TZ=America/La_Paz
 
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs && \

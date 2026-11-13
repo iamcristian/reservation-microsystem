@@ -43,6 +43,7 @@ import {
   buildStaffInviteWhatsAppUrl,
 } from "@/lib/whatsapp";
 import { formatLocalDateYYYYMMDD } from "@/lib/date-utils";
+import { isTimeOffOnDate } from "@/lib/timeoff-utils";
 import {
   validateAllShifts,
   timeToMinutes,
@@ -1670,17 +1671,11 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
           {/* Active TimeOff / Bloqueos de Agenda para la fecha seleccionada */}
           {(() => {
             const activeStaffObj = staffList.find((s: any) => s.id === selectedStaffId);
-            const dayStart = new Date(`${agendaDateStr}T00:00:00`);
-            const dayEnd = new Date(`${agendaDateStr}T23:59:59`);
             const dayBlocks = (
               selectedStaffId === "ALL"
                 ? staffList.flatMap((st: any) => st.timeOffs || [])
                 : activeStaffObj?.timeOffs || []
-            ).filter((to: any) => {
-              const s = new Date(to.startAt);
-              const e = new Date(to.endAt);
-              return s <= dayEnd && e >= dayStart;
-            });
+            ).filter((to: any) => isTimeOffOnDate(to, agendaDateStr));
 
             if (dayBlocks.length === 0) return null;
 

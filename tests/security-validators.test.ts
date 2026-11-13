@@ -9,6 +9,7 @@ import {
 } from "../src/lib/validation/input-validators";
 import { parseCoordinatesFromUrl } from "../src/lib/geo";
 import { buildWhatsAppUrl, cleanPhoneForWhatsApp } from "../src/lib/whatsapp";
+import { describeTimeOffBlock, isTimeOffOnDate } from "../src/lib/timeoff-utils";
 
 let passed = 0;
 let failed = 0;
@@ -89,6 +90,27 @@ assert(
   buildWhatsAppUrl("+591 70012345", "Hola mundo") ===
     "https://wa.me/59170012345?text=Hola%20mundo",
   "Builds properly encoded WhatsApp deep link"
+);
+
+// TimeOff UTC-vs-local boundary isolation (Bolivia UTC-4 Saturday block must not bleed into Sunday)
+const satUtc4Block = {
+  type: "FULL_DAY_OFF",
+  reason: "Cerrado el 2026-11-14 por descanso/imprevisto",
+  startAt: "2026-11-14T04:00:00.000Z",
+  endAt: "2026-11-15T03:59:59.000Z",
+};
+assert(
+  isTimeOffOnDate(satUtc4Block, "2026-11-14") === true,
+  "Matches FULL_DAY_OFF block on its target date (Saturday 14)"
+);
+assert(
+  isTimeOffOnDate(satUtc4Block, "2026-11-15") === false,
+  "Does NOT bleed UTC-4 FULL_DAY_OFF block into next calendar date (Sunday 15)"
+);
+const satInfo = describeTimeOffBlock(satUtc4Block);
+assert(
+  satInfo.periodLabel.includes("14") && !satInfo.periodLabel.includes("15"),
+  "Formats FULL_DAY_OFF periodLabel anchored cleanly to day 14"
 );
 
 console.log(`\nSecurity & Utility Results: ${passed} passed, ${failed} failed\n`);
