@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Ensure search crawlers and WhatsApp/Telegram/social link scrapers receive all SEO and OG tags directly in <head>
+  htmlLimitedBots: /.*/,
   turbopack: {
     rules: {
       "*.css": {
