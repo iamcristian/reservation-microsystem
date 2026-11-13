@@ -4,19 +4,13 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Calendar,
   Clock,
-  User,
   Phone,
   Shield,
-  ShieldAlert,
   Settings,
   Plus,
   Check,
-  X,
   AlertTriangle,
   AlertCircle,
-  CheckCircle2,
-  Info,
-  Scissors,
   Stethoscope,
   ChevronRight,
   Sun,
@@ -32,6 +26,16 @@ import {
 import BranchMap from "./BranchMap";
 import InteractiveMapPicker from "./InteractiveMapPicker";
 import { WhatsAppIcon } from "./WhatsAppIcon";
+import { ToastContainer, ToastItem } from "./ui/ToastContainer";
+import { ConfirmModal, ConfirmModalState } from "./ui/ConfirmModal";
+import { ServicesCatalogTab } from "./admin/ServicesCatalogTab";
+import { CustomerControlTab } from "./admin/CustomerControlTab";
+import { compressImageFileToDataUrl } from "@/lib/image-utils";
+import {
+  buildCustomerCancellationWhatsAppUrl,
+  buildCustomerNoShowWhatsAppUrl,
+  buildStaffInviteWhatsAppUrl,
+} from "@/lib/whatsapp";
 import { formatLocalDateYYYYMMDD } from "@/lib/date-utils";
 import {
   validateAllShifts,
@@ -93,17 +97,10 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
   const [savingStaff, setSavingStaff] = useState(false);
 
   // Toast notifications state (modern replacement for window.alert)
-  const [toasts, setToasts] = useState<
-    {
-      id: string;
-      type: "success" | "error" | "warning" | "info";
-      title: string;
-      message?: string;
-    }[]
-  >([]);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const showToast = (
-    type: "success" | "error" | "warning" | "info",
+    type: ToastItem["type"],
     title: string,
     message?: string
   ) => {
@@ -119,13 +116,7 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
   };
 
   // Modern confirm modal state (replacement for window.confirm)
-  const [confirmDialog, setConfirmDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    confirmLabel?: string;
-    onConfirm: () => void;
-  } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmModalState | null>(null);
 
   const selectedStaff =
     staffList.find((s: any) => s.id === selectedStaffId) || staffList[0];
@@ -655,10 +646,6 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
       .finally(() => setLoadingApts(false));
   };
 
-  useEffect(() => {
-    loadDayAppointments();
-  }, [agendaDateStr, selectedStaffId]);
-
   // Handle Quick Imprevisto submit
   const handleQuickImprevisto = async (resolution?: string, overrideStaffId?: string) => {
     let startAt = new Date(`${agendaDateStr}T00:00:00`);
@@ -816,48 +803,12 @@ export function AdminApp({ initialData, onRefresh }: AdminAppProps) {
   };
 
   // Generate WhatsApp URL with automated cancellation notice
-  const getWhatsAppCancelUrl = (apt: any) => {
-    const rawPhone = (apt.customer?.phone || "").replace(/\D/g, "");
-    const dateFormatted = new Date(apt.startAt).toLocaleDateString("es-ES", {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-    });
-    const timeFormatted = new Date(apt.startAt).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    const text = `Hola ${apt.customer?.name || ""}, te escribe ${settings?.name || "la clínica"} (${apt.staff?.displayName || "el profesional"}).
-
-Lamentamos informarte que tuvimos que cancelar tu cita de *${apt.service?.name || "servicio"}* programada para el *${dateFormatted}* a las *${timeFormatted}* debido a un imprevisto / ajuste de agenda.
-
-Disculpa los inconvenientes ocasionados. Puedes ingresar a la app para seleccionar un nuevo horario disponible cuando gustes o responder directamente a este mensaje para coordinar.`;
-
-    return `https://wa.me/${rawPhone}?text=${encodeURIComponent(text)}`;
-  };
+  const getWhatsAppCancelUrl = (apt: any) =>
+    buildCustomerCancellationWhatsAppUrl(apt, settings?.name);
 
   // Generate WhatsApp URL with automated absence notice (No-Show)
-  const getWhatsAppNoShowUrl = (apt: any) => {
-    const rawPhone = (apt.customer?.phone || "").replace(/\D/g, "");
-    const dateFormatted = new Date(apt.startAt).toLocaleDateString("es-ES", {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-    });
-    const timeFormatted = new Date(apt.startAt).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    const text = `Hola ${apt.customer?.name || ""}, te escribe ${settings?.name || "el consultorio"} (${apt.staff?.displayName || "el profesional"}).
-
-Te esperábamos para tu cita de *${apt.service?.name || "servicio"}* reservada para el *${dateFormatted}* a las *${timeFormatted}*, pero notamos que no pudiste presentarte.
-
-¿Te encuentras bien o tuviste algún inconveniente? Si deseas reprogramar, por favor comunícate por este medio. Recuerda avisar con anticipación para liberar el turno a otros pacientes. ¡Buen día!`;
-
-    return `https://wa.me/${rawPhone}?text=${encodeURIComponent(text)}`;
-  };
+  const getWhatsAppNoShowUrl = (apt: any) =>
+    buildCustomerNoShowWhatsAppUrl(apt, settings?.name);
 
   // Handle Appointment Status Change (Doctors/Admins can always cancel any appointment regardless of customer 6h notice rule)
   const handleStatusChange = async (
@@ -965,44 +916,17 @@ Te esperábamos para tu cita de *${apt.service?.name || "servicio"}* reservada p
   };
 
   // Handle Logo File Upload (converts image to lightweight DataURL)
-  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      showToast(
-        "warning",
-        "Formato de imagen inválido",
-        "Por favor selecciona un archivo de imagen válido (PNG, JPG, WebP o SVG)."
-      );
-      return;
+    try {
+      const dataUrl = await compressImageFileToDataUrl(file, 256, 0.88);
+      setSettingsForm((prev: any) => ({ ...prev, logoUrl: dataUrl }));
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "No se pudo procesar la imagen seleccionada.";
+      showToast("warning", "Formato de imagen inválido", msg);
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const maxSize = 256;
-        let width = img.width;
-        let height = img.height;
-        if (width > height && width > maxSize) {
-          height = Math.round((height * maxSize) / width);
-          width = maxSize;
-        } else if (height > maxSize) {
-          width = Math.round((width * maxSize) / height);
-          height = maxSize;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
-          setSettingsForm((prev: any) => ({ ...prev, logoUrl: dataUrl }));
-        }
-      };
-      img.src = ev.target?.result as string;
-    };
-    reader.readAsDataURL(file);
   };
 
   // Handle Create / Authorize Staff Member (Doctor / Employee)
@@ -1086,27 +1010,14 @@ Te esperábamos para tu cita de *${apt.service?.name || "servicio"}* reservada p
 
   // Generate WhatsApp Invitation Link for New Staff Member
   const getWhatsAppStaffInviteUrl = (staff: any) => {
-    const rawPhone = (staff.user?.phone || settings?.phoneWhatsapp || "").replace(
-      /\D/g,
-      ""
-    );
-    const staffEmail = staff.user?.email || "tu correo de Google";
     const appUrl =
       typeof window !== "undefined" ? window.location.origin : "https://clinica.app";
-    const text = `Hola *${staff.displayName}*, te damos la bienvenida al equipo de *${
-      settings?.name || "nuestra clínica"
-    }* 👋.
-
-Ya habilitamos tu cuenta de profesional en nuestro sistema de citas online:
-🔗 *Enlace de acceso:* ${appUrl}
-📧 *Cuenta Google autorizada:* ${staffEmail}
-🩺 *Rol asignado:* Profesional / Especialista (${staff.specialty})
-
-Al ingresar con tu correo de Google podrás:
-✅ Ver y gestionar tus citas del día (marcar atendidas, faltas o avisar por WhatsApp).
-✅ Configurar tus horarios semanales y bloquear imprevistos (entrar más tarde, salir antes o cerrar día).`;
-
-    return `https://wa.me/${rawPhone}?text=${encodeURIComponent(text)}`;
+    return buildStaffInviteWhatsAppUrl(
+      staff,
+      settings?.phoneWhatsapp,
+      settings?.name,
+      appUrl
+    );
   };
 
   // Quick preview of a staff member's session
@@ -3102,276 +3013,47 @@ Al ingresar con tu correo de Google podrás:
       )}
 
       {/* TAB 3: SERVICIOS & PRECIOS */}
+      {/* TAB 3: SERVICIOS & PRECIOS */}
       {activeTab === "services" && isOwnerAdmin && (
-        <div className="p-4 space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <h2 className="text-sm font-bold text-zinc-700 uppercase tracking-wider">
-              Catálogo de Servicios ({services.length})
-            </h2>
-            <button
-              onClick={() =>
-                setServiceModal({
-                  name: "",
-                  description: "",
-                  durationMin: 30,
-                  bufferAfterMin: 0,
-                  price: 30,
-                  staffIds: staffList.map((s: any) => s.id),
-                })
-              }
-              className="px-3.5 min-h-[36px] rounded-full bg-[#1F1F23] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm whitespace-nowrap"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Nuevo Servicio</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {services.map((svc: any) => {
-              const assignedStaff = staffList.filter((st: any) =>
-                svc.staff?.some((s: any) => s.staffId === st.id) ||
-                st.services?.some((s: any) => s.serviceId === svc.id)
-              );
-
-              return (
-                <div
-                  key={svc.id}
-                  className="p-4 rounded-3xl border border-zinc-200 bg-white flex flex-col justify-between text-xs shadow-sm hover:border-zinc-300 transition-all gap-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="font-bold text-sm text-zinc-900">{svc.name}</div>
-                      {svc.description && (
-                        <div className="text-zinc-500 text-[11px] mt-0.5 line-clamp-1">
-                          {svc.description}
-                        </div>
-                      )}
-                      <div className="text-zinc-500 text-[11px] mt-0.5 font-medium">
-                        ⏱️ {svc.durationMin} min{" "}
-                        {svc.bufferAfterMin > 0 && `(+${svc.bufferAfterMin} min limpieza)`}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2.5 flex-shrink-0">
-                      <span className="font-bold text-sm text-zinc-900">
-                        {settings?.currencySymbol || "$"}
-                        {svc.price.toFixed(2)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const currentStaffIds = assignedStaff.map((s: any) => s.id);
-                          setServiceModal({
-                            id: svc.id,
-                            name: svc.name,
-                            description: svc.description || "",
-                            durationMin: svc.durationMin,
-                            bufferAfterMin: svc.bufferAfterMin ?? 0,
-                            price: svc.price,
-                            isActive: svc.isActive ?? true,
-                            staffIds: currentStaffIds,
-                          });
-                        }}
-                        className="px-2.5 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-all"
-                      >
-                        ✏️ Editar
-                      </button>
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                    </div>
-                  </div>
-
-                  {/* Especialistas asignados a este servicio (1-Clic para habilitar o bloquear) */}
-                  <div className="pt-2.5 border-t border-zinc-100 space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="text-zinc-500 font-bold uppercase tracking-wider">
-                        ¿Quiénes lo realizan? ({assignedStaff.length}/{staffList.length})
-                      </span>
-                      {assignedStaff.length === 0 ? (
-                        <span className="text-amber-800 font-bold bg-amber-100 border border-amber-300 px-2 py-0.2 rounded-full">
-                          ⚠️ Sin asignar
-                        </span>
-                      ) : assignedStaff.length === staffList.length ? (
-                        <span className="text-emerald-800 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full">
-                          ✓ Todo el equipo
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {staffList.map((st: any) => {
-                        const isAssigned = assignedStaff.some((a: any) => a.id === st.id);
-                        return (
-                          <button
-                            key={st.id}
-                            type="button"
-                            onClick={() => handleToggleServiceStaff(svc, st)}
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all flex items-center gap-1 active:scale-95 ${
-                              isAssigned
-                                ? "bg-[#1F1F23] text-white shadow-2xs hover:bg-black"
-                                : "bg-zinc-100 border border-dashed border-zinc-300 text-zinc-400 hover:text-zinc-700 hover:border-zinc-400"
-                            }`}
-                            title={
-                              isAssigned
-                                ? `Clic para quitar a ${st.displayName} de "${svc.name}"`
-                                : `Clic para asignar a ${st.displayName} en "${svc.name}"`
-                            }
-                          >
-                            <span>{isAssigned ? "✓" : "○"}</span>
-                            <span>{st.displayName}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <ServicesCatalogTab
+          services={services}
+          staffList={staffList}
+          currencySymbol={settings?.currencySymbol || "$"}
+          onOpenNewService={() =>
+            setServiceModal({
+              name: "",
+              description: "",
+              durationMin: 30,
+              bufferAfterMin: 0,
+              price: 30,
+              staffIds: staffList.map((s: any) => s.id),
+            })
+          }
+          onOpenEditService={(svc, currentStaffIds) =>
+            setServiceModal({
+              id: svc.id,
+              name: svc.name,
+              description: svc.description || "",
+              durationMin: svc.durationMin,
+              bufferAfterMin: svc.bufferAfterMin ?? 0,
+              price: svc.price,
+              isActive: svc.isActive ?? true,
+              staffIds: currentStaffIds,
+            })
+          }
+          onToggleServiceStaff={handleToggleServiceStaff}
+        />
       )}
 
       {/* TAB 4: CLIENTES & ANTI-TROLLS */}
       {activeTab === "customers" && isOwnerAdmin && (
-        <div className="p-4 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-bold text-zinc-700 uppercase tracking-wider">
-                Control de Clientes y Faltas
-              </h2>
-              <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
-                Al acumular 2 inasistencias se bloquean automáticamente. Al reiniciar faltas, las anteriores pasan al archivo histórico.
-              </p>
-            </div>
-            <span className="text-[11px] font-semibold text-zinc-500 bg-zinc-100 px-2.5 py-0.5 rounded-full self-start sm:self-auto whitespace-nowrap shrink-0">
-              {allUsers.length} registrados
-            </span>
-          </div>
-
-          {/* Filtros rápidos */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setCustFilter("all")}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                custFilter === "all"
-                  ? "bg-[#1F1F23] text-white shadow-sm"
-                  : "bg-zinc-200 text-zinc-700 hover:bg-zinc-300"
-              }`}
-            >
-              Todos ({allUsers.length})
-            </button>
-            <button
-              onClick={() => setCustFilter("issues")}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${
-                custFilter === "issues"
-                  ? "bg-[#1F1F23] text-white shadow-sm"
-                  : "bg-zinc-200 text-zinc-700 hover:bg-zinc-300"
-              }`}
-            >
-              <span>⚠️ Con faltas / Bloqueados</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-zinc-950 font-extrabold">
-                {allUsers.filter((u: any) => (u.noShowCount || 0) > 0 || u.isBlocked).length}
-              </span>
-            </button>
-          </div>
-
-          <div className="space-y-2.5">
-            {allUsers
-              .filter((u: any) =>
-                custFilter === "issues"
-                  ? (u.noShowCount || 0) > 0 || u.isBlocked
-                  : true
-              )
-              .map((u: any) => (
-                <div
-                  key={u.id}
-                  className={`p-3.5 rounded-3xl border transition-all ${
-                    u.isBlocked
-                      ? "bg-red-50 border-red-200"
-                      : "bg-white border-zinc-200 shadow-sm"
-                  }`}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                    <div className="min-w-0">
-                      <div className="font-bold text-sm text-zinc-900 flex items-center gap-1.5 flex-wrap">
-                        <span>{u.name}</span>
-                        {u.isBlocked && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white">
-                            BLOQUEADO
-                          </span>
-                        )}
-                        {(u.noShowCount || 0) >= 2 && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-zinc-950">
-                            2+ Inasistencias
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-zinc-500 text-[11px] mt-0.5 break-words">
-                        {u.email} {u.phone ? `• ${u.phone}` : "• Sin teléfono"}
-                      </div>
-                    </div>
-
-                    <div className="sm:text-right shrink-0">
-                      <div className="text-[11px] text-zinc-600 whitespace-nowrap">
-                        Asistidas: <b className="text-emerald-700">{u.completedCount || 0}</b> | Faltas vigentes:{" "}
-                        <b className={(u.noShowCount || 0) > 0 ? "text-amber-700" : "text-zinc-600"}>
-                          {u.noShowCount || 0}/2
-                        </b>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 pt-2.5 border-t border-zinc-100 flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex gap-2">
-                      {u.phone && (
-                        <>
-                          <a
-                            href={`tel:${u.phone}`}
-                            className="px-2.5 py-1 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[11px] font-medium flex items-center gap-1"
-                          >
-                            <Phone className="w-3 h-3" />
-                            <span>Llamar</span>
-                          </a>
-                          <a
-                            href={`https://wa.me/${u.phone.replace(/\D/g, "")}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-2.5 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-semibold flex items-center gap-1"
-                          >
-                            <WhatsAppIcon className="w-3.5 h-3.5" />
-                            <span>WhatsApp</span>
-                          </a>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      {(u.noShowCount || 0) > 0 && (
-                        <button
-                          onClick={() => handleResetUserStrikes(u.id)}
-                          className="px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all"
-                          title="Archivar faltas anteriores en su historial y devolver contador a 0/2"
-                        >
-                          {u.isBlocked
-                            ? "🔄 Reiniciar faltas y Desbloquear"
-                            : "🔄 Justificar / Archivar faltas"}
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => handleToggleBlockUser(u.id, u.isBlocked)}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                          u.isBlocked
-                            ? "bg-zinc-800 text-white hover:bg-black"
-                            : "bg-red-100 text-red-700 hover:bg-red-200"
-                        }`}
-                      >
-                        {u.isBlocked ? "Desbloquear" : "Bloquear Cuenta"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
+        <CustomerControlTab
+          allUsers={allUsers}
+          custFilter={custFilter}
+          onChangeFilter={setCustFilter}
+          onResetUserStrikes={handleResetUserStrikes}
+          onToggleBlockUser={handleToggleBlockUser}
+        />
       )}
 
       {/* TAB 5: AJUSTES TEMPLATE WHITE-LABEL */}
@@ -4789,96 +4471,12 @@ Al ingresar con tu correo de Google podrás:
         </div>
       )}
 
-      {/* Floating Modern Toast Notifications (Reemplaza los alerts nativos) */}
-      <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`pointer-events-auto rounded-2xl p-3.5 shadow-xl border backdrop-blur-md flex items-start gap-3 transition-all animate-in slide-in-from-top-3 fade-in duration-200 ${
-              toast.type === "success"
-                ? "bg-white/95 border-emerald-300 text-zinc-900 shadow-emerald-500/10"
-                : toast.type === "error"
-                ? "bg-white/95 border-red-300 text-zinc-900 shadow-red-500/10"
-                : toast.type === "warning"
-                ? "bg-white/95 border-amber-300 text-zinc-900 shadow-amber-500/10"
-                : "bg-white/95 border-blue-300 text-zinc-900 shadow-blue-500/10"
-            }`}
-          >
-            <div
-              className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                toast.type === "success"
-                  ? "bg-emerald-100 text-emerald-600"
-                  : toast.type === "error"
-                  ? "bg-red-100 text-red-600"
-                  : toast.type === "warning"
-                  ? "bg-amber-100 text-amber-600"
-                  : "bg-blue-100 text-blue-600"
-              }`}
-            >
-              {toast.type === "success" && <CheckCircle2 className="w-4 h-4" />}
-              {toast.type === "error" && <AlertCircle className="w-4 h-4" />}
-              {toast.type === "warning" && <AlertTriangle className="w-4 h-4" />}
-              {toast.type === "info" && <Info className="w-4 h-4" />}
-            </div>
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
 
-            <div className="flex-1 min-w-0 pr-1">
-              <h4 className="font-bold text-xs text-zinc-900 leading-snug">
-                {toast.title}
-              </h4>
-              {toast.message && (
-                <p className="text-[11px] text-zinc-600 mt-0.5 leading-relaxed">
-                  {toast.message}
-                </p>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => removeToast(toast.id)}
-              className="text-zinc-400 hover:text-zinc-700 p-0.5 rounded-lg transition-colors shrink-0"
-              title="Cerrar notificación"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* Modern Confirmation Modal (Reemplaza window.confirm) */}
-      {confirmDialog?.isOpen && (
-        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-zinc-200 text-center animate-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-3">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-            <h3 className="font-bold text-base text-zinc-900 mb-1">
-              {confirmDialog.title}
-            </h3>
-            <p className="text-xs text-zinc-600 mb-5 leading-relaxed">
-              {confirmDialog.message}
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmDialog(null)}
-                className="flex-1 py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition-all"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  confirmDialog.onConfirm();
-                  setConfirmDialog(null);
-                }}
-                className="flex-1 py-2.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-all"
-              >
-                {confirmDialog.confirmLabel || "Confirmar"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        dialog={confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+      />
     </div>
   );
 }
