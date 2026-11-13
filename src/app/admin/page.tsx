@@ -157,38 +157,39 @@ export default function AdminPage() {
               <label className="text-xs text-zinc-500 block font-medium">
                 Correo Electrónico Autorizado
               </label>
-              <input
-                type="email"
-                required
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="ejemplo@sonrisa.com"
-                className="bg-transparent font-semibold text-sm text-[#1F1F23] focus:outline-none w-full mt-0.5"
-              />
-            </div>
-
-            <div className="border border-zinc-300 bg-[#F4F4F6] rounded-2xl px-4 py-2.5 relative">
-              <label className="text-xs text-zinc-500 block font-medium">
-                Contraseña Privada
-              </label>
-              <div className="flex items-center justify-between">
                 <input
-                  type={showPassword ? "text" : "password"}
+                  type="email"
                   required
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="••••••••"
-                  className="bg-transparent font-semibold text-sm text-[#1F1F23] focus:outline-none w-full mt-0.5"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="ejemplo@sonrisa.com"
+                  className="bg-transparent font-semibold text-base sm:text-sm text-[#1F1F23] focus:outline-none w-full mt-0.5"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="text-zinc-400 hover:text-zinc-700 ml-2"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
-            </div>
+
+              <div className="border border-zinc-300 bg-[#F4F4F6] rounded-2xl px-4 py-2.5 relative">
+                <label className="text-xs text-zinc-500 block font-medium">
+                  Contraseña Privada
+                </label>
+                <div className="flex items-center justify-between">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    placeholder="••••••••"
+                    className="bg-transparent font-semibold text-base sm:text-sm text-[#1F1F23] focus:outline-none w-full mt-0.5"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    className="text-zinc-400 hover:text-zinc-700 w-9 h-9 -mr-1 flex items-center justify-center shrink-0"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
 
             <button
               type="submit"
@@ -199,7 +200,7 @@ export default function AdminPage() {
             </button>
           </form>
 
-          <div className="pt-2 text-center">
+          <div className="pt-2 text-center space-y-2">
             <Link
               href="/"
               className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-black transition-all"
@@ -207,6 +208,19 @@ export default function AdminPage() {
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Volver a la vista de reservas para clientes</span>
             </Link>
+            <div className="flex items-center justify-center gap-2 text-[11px] text-zinc-400">
+              <Link href="/terminos" className="hover:text-zinc-700 underline">
+                Términos
+              </Link>
+              <span>•</span>
+              <Link href="/privacidad" className="hover:text-zinc-700 underline">
+                Privacidad
+              </Link>
+              <span>•</span>
+              <Link href="/cookies" className="hover:text-zinc-700 underline">
+                Cookies
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -215,22 +229,22 @@ export default function AdminPage() {
 
   // Authorized Admin / Provider Dashboard View
   return (
-    <div className="min-h-screen flex flex-col bg-[#EBEBEF]">
+    <div className="min-h-dvh flex flex-col bg-[#EBEBEF]">
       {/* Top Professional Header Bar */}
-      <header className="bg-[#1F1F23] text-white text-xs px-4 py-2.5 flex items-center justify-between z-50 sticky top-0 shadow-md">
-        <div className="flex items-center gap-3">
-          <span className="font-bold tracking-tight text-white hidden sm:inline">
+      <header className="bg-[#1F1F23] text-white text-xs px-3 sm:px-4 py-2 min-h-[44px] flex items-center justify-between gap-2 z-50 sticky top-0 shadow-md">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <span className="font-bold tracking-tight text-white hidden sm:inline truncate max-w-[180px]">
             {data?.settings?.name || "Clínica & Reservas"}
           </span>
           <span className="hidden sm:inline text-zinc-500">|</span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             {currentUser.role === "ADMIN" ? (
-              <Shield className="w-3.5 h-3.5 text-amber-400" />
+              <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             ) : (
-              <Stethoscope className="w-3.5 h-3.5 text-emerald-400" />
+              <Stethoscope className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             )}
-            <span className="font-semibold">{currentUser.name}</span>
-            <span className="bg-white/10 text-zinc-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
+            <span className="font-semibold truncate max-w-[140px] sm:max-w-none">{currentUser.name}</span>
+            <span className="hidden sm:inline-flex bg-white/10 text-zinc-300 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
               {currentUser.role === "ADMIN"
                 ? "Administrador"
                 : data?.settings?.staffLabel || "Doctor(a)"}
@@ -238,24 +252,25 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {currentUser.role === "ADMIN" && (
             <Link
               href="/"
-              className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-medium px-3 py-1 rounded-full text-[11px] transition-all"
+              className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white font-medium px-2.5 sm:px-3 min-h-[32px] rounded-full text-[11px] transition-all whitespace-nowrap"
               title="Ver cómo los pacientes ven el portal de reservas públicas"
             >
-              <ArrowLeft className="w-3 h-3" />
-              <span>Ver Portal Clientes</span>
+              <ArrowLeft className="w-3 h-3 shrink-0" />
+              <span className="sm:hidden">Portal</span>
+              <span className="hidden sm:inline">Ver Portal Clientes</span>
             </Link>
           )}
           <button
             type="button"
             onClick={handleLogout}
-            className="inline-flex items-center gap-1 bg-red-500/20 hover:bg-red-500/30 text-red-200 hover:text-white px-2.5 py-1 rounded-full text-[11px] font-medium transition-all"
+            className="inline-flex items-center gap-1 bg-red-500/20 hover:bg-red-500/30 text-red-200 hover:text-white px-2.5 min-h-[32px] rounded-full text-[11px] font-medium transition-all whitespace-nowrap"
             title="Cerrar Sesión"
           >
-            <LogOut className="w-3 h-3" />
+            <LogOut className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Salir</span>
           </button>
         </div>
