@@ -1,7 +1,14 @@
 // src/app/api/admin/appointments/[id]/status/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/session";
+import {
+  requireStaffOrAdmin,
+  safeErrorResponse,
+  sanitizeUserForClient,
+  verifyProviderOwnsStaff,
+  verifySameOrigin,
+} from "@/lib/api-guard";
+import { VALID_APPOINTMENT_STATUSES } from "@/lib/validation/input-validators";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +17,26 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser();
-    if (!user || (user.role !== "ADMIN" && user.role !== "PROVIDER")) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
+    const originErr = verifySameOrigin(req);
+    if (originErr) return originErr;
+
+    const auth = await requireStaffOrAdmin();
+    if (auth.error) return auth.error;
+    const { user } = auth;
 
     const { id } = await params;
-    const { status, reason, blockCustomer } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { status, reason, blockCustomer } = body;
+
+    if (
+      typeof status !== "string" ||
+      !(VALID_APPOINTMENT_STATUSES as readonly string[]).includes(status)
+    ) {
+      return NextResponse.json(
+        { error: "Estado de cita inválido." },
+        { status: 400 }
+      );
+    }
 
     const appointment = await prisma.appointment.findUnique({
       where: { id },
@@ -27,88 +47,112 @@ export async function PUT(
       return NextResponse.json({ error: "Cita no encontrada" }, { status: 404 });
     }
 
-    if (user.role === "PROVIDER") {
-      const ownStaff = await prisma.staffProfile.findFirst({
-        where: { userId: user.id },
-      });
-      if (!ownStaff || ownStaff.id !== appointment.staffId) {
-        return NextResponse.json(
-          { error: "Solo tienes permisos para gestionar citas de tu propia agenda." },
-          { status: 403 }
-        );
-      }
-    }
+    const ownershipErr = await verifyProviderOwnsStaff(user, appointment.staffId);
+    if (ownershipErr) return ownershipErr;
 
+    const cleanReason =
+      typeof reason === "string" ? reason.trim().slice(0, 300) : undefined;
     const effectiveReason =
       status === "CANCELLED"
-        ? reason || "Cancelada por el profesional / imprevisto de agenda"
-        : reason;
+        ? cleanReason || "Cancelada por el profesional / imprevisto de agenda"
+        : cleanReason;
 
-    const updated = await prisma.appointment.update({
-      where: { id },
-      data: {
-        status,
-        ...(effectiveReason ? { staffMoveReason: effectiveReason } : {}),
-      },
-    });
+    const previousStatus = appointment.status;
 
-    let finalCustomer = appointment.customer;
-
-    if (status === "CANCELLED") {
-      const aptDate = new Date(appointment.startAt);
-      const timeFormatted = aptDate.toLocaleTimeString("es-ES", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      const dateFormatted = aptDate.toLocaleDateString("es-ES", {
-        weekday: "long",
-        day: "numeric",
-        month: "short",
-      });
-      const serviceName = appointment.service?.name || "Servicio";
-
-      await prisma.notification.create({
+    const result = await prisma.$transaction(async (tx) => {
+      const updated = await tx.appointment.update({
+        where: { id },
         data: {
-          userId: appointment.customerId,
-          appointmentId: appointment.id,
-          type: "APPOINTMENT_CANCELLED",
-          title: `Se canceló tu cita de las ${timeFormatted} (${serviceName})`,
-          message: `Tu cita de ${serviceName} del ${dateFormatted} a las ${timeFormatted} con ${appointment.staff?.displayName || "el profesional"} fue cancelada: "${reason || "Imprevisto de agenda"}". Puedes agendar un nuevo horario cuando desees.`,
-        },
-      });
-    } else if (status === "COMPLETED") {
-      finalCustomer = await prisma.user.update({
-        where: { id: appointment.customerId },
-        data: { completedCount: { increment: 1 } },
-      });
-    } else if (status === "NO_SHOW") {
-      let updatedUser = await prisma.user.update({
-        where: { id: appointment.customerId },
-        data: {
-          noShowCount: { increment: 1 },
-          ...(blockCustomer ? { isBlocked: true } : {}),
+          status,
+          ...(effectiveReason ? { staffMoveReason: effectiveReason } : {}),
         },
       });
 
-      // Smart limit rule: if 2 or more no-shows are reached, automatically block customer
-      if (updatedUser.noShowCount >= 2 && !updatedUser.isBlocked) {
-        updatedUser = await prisma.user.update({
-          where: { id: appointment.customerId },
-          data: { isBlocked: true },
+      let finalCustomer = appointment.customer;
+
+      if (status === "CANCELLED" && previousStatus !== "CANCELLED") {
+        const aptDate = new Date(appointment.startAt);
+        const timeFormatted = aptDate.toLocaleTimeString("es-ES", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        const dateFormatted = aptDate.toLocaleDateString("es-ES", {
+          weekday: "long",
+          day: "numeric",
+          month: "short",
+        });
+        const serviceName = appointment.service?.name || "Servicio";
+
+        await tx.notification.create({
+          data: {
+            userId: appointment.customerId,
+            appointmentId: appointment.id,
+            type: "APPOINTMENT_CANCELLED",
+            title: `Se canceló tu cita de las ${timeFormatted} (${serviceName})`,
+            message: `Tu cita de ${serviceName} del ${dateFormatted} a las ${timeFormatted} con ${
+              appointment.staff?.displayName || "el profesional"
+            } fue cancelada: "${
+              cleanReason || "Imprevisto de agenda"
+            }". Puedes agendar un nuevo horario cuando desees.`,
+          },
         });
       }
-      finalCustomer = updatedUser;
-    } else if (blockCustomer !== undefined) {
-      finalCustomer = await prisma.user.update({
-        where: { id: appointment.customerId },
-        data: { isBlocked: !!blockCustomer },
-      });
-    }
 
-    const { passwordHash: _ph, googleId: _gid, ...safeCustomer } = finalCustomer;
+      // Idempotent counter deltas: only adjust when actually transitioning in or out of COMPLETED / NO_SHOW
+      let completedDelta = 0;
+      if (previousStatus !== "COMPLETED" && status === "COMPLETED") {
+        completedDelta = 1;
+      } else if (previousStatus === "COMPLETED" && status !== "COMPLETED") {
+        completedDelta = -1;
+      }
 
-    return NextResponse.json({ ok: true, appointment: updated, customer: safeCustomer });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+      let noShowDelta = 0;
+      if (previousStatus !== "NO_SHOW" && status === "NO_SHOW") {
+        noShowDelta = 1;
+      } else if (previousStatus === "NO_SHOW" && status !== "NO_SHOW") {
+        noShowDelta = -1;
+      }
+
+      const nextCompleted = Math.max(
+        0,
+        finalCustomer.completedCount + completedDelta
+      );
+      const nextNoShow = Math.max(0, finalCustomer.noShowCount + noShowDelta);
+
+      const canModifyBlock = user.role === "ADMIN" || status === "NO_SHOW";
+      let nextBlocked = finalCustomer.isBlocked;
+      if (status === "NO_SHOW") {
+        if (blockCustomer || nextNoShow >= 2) {
+          nextBlocked = true;
+        }
+      } else if (canModifyBlock && blockCustomer !== undefined) {
+        nextBlocked = Boolean(blockCustomer);
+      }
+
+      if (
+        nextCompleted !== finalCustomer.completedCount ||
+        nextNoShow !== finalCustomer.noShowCount ||
+        nextBlocked !== finalCustomer.isBlocked
+      ) {
+        finalCustomer = await tx.user.update({
+          where: { id: appointment.customerId },
+          data: {
+            completedCount: nextCompleted,
+            noShowCount: nextNoShow,
+            isBlocked: nextBlocked,
+          },
+        });
+      }
+
+      return { updated, finalCustomer };
+    });
+
+    return NextResponse.json({
+      ok: true,
+      appointment: result.updated,
+      customer: sanitizeUserForClient(result.finalCustomer),
+    });
+  } catch (error: unknown) {
+    return safeErrorResponse(error, "No se pudo actualizar el estado de la cita.");
   }
 }

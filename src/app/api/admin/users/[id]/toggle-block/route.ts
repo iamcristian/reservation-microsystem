@@ -1,7 +1,12 @@
 // src/app/api/admin/users/[id]/toggle-block/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/session";
+import {
+  requireAdmin,
+  safeErrorResponse,
+  sanitizeUserForClient,
+  verifySameOrigin,
+} from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -10,10 +15,11 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
+    const originErr = verifySameOrigin(req);
+    if (originErr) return originErr;
+
+    const auth = await requireAdmin();
+    if (auth.error) return auth.error;
 
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
@@ -21,6 +27,13 @@ export async function PUT(
     const targetUser = await prisma.user.findUnique({ where: { id } });
     if (!targetUser) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+    }
+
+    if (targetUser.role === "ADMIN") {
+      return NextResponse.json(
+        { error: "No se puede bloquear la cuenta del Administrador principal." },
+        { status: 400 }
+      );
     }
 
     let newBlockedState =
@@ -54,17 +67,20 @@ export async function PUT(
       where: { id },
       data: {
         isBlocked: newBlockedState,
-        adminNotes: body.adminNotes !== undefined ? body.adminNotes : undefined,
+        adminNotes:
+          body.adminNotes !== undefined
+            ? typeof body.adminNotes === "string"
+              ? body.adminNotes.trim().slice(0, 500)
+              : null
+            : undefined,
         noShowCount: nextNoShowCount,
         completedCount:
           body.incrementCompleted ? targetUser.completedCount + 1 : undefined,
       },
     });
 
-    const { passwordHash: _ph, googleId: _gid, ...safeUser } = updated;
-
-    return NextResponse.json({ ok: true, user: safeUser });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, user: sanitizeUserForClient(updated) });
+  } catch (error: unknown) {
+    return safeErrorResponse(error, "No se pudo actualizar el estado del cliente.");
   }
 }

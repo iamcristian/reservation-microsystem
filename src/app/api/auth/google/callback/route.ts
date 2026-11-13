@@ -78,9 +78,9 @@ export async function GET(req: Request) {
 
     const profile = await userinfoResponse.json();
 
-    if (!profile.email) {
+    if (!profile.email || profile.email_verified === false) {
       return NextResponse.redirect(
-        `${baseUrl}${returnTo}?authError=no_email_provided`
+        `${baseUrl}${returnTo}?authError=email_not_verified`
       );
     }
 
@@ -121,7 +121,7 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.redirect(`${baseUrl}${returnTo}`);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Google callback error:", error);
     return NextResponse.redirect(`${baseUrl}/?authError=oauth_callback_failed`);
   }

@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, setSessionUserId } from "@/lib/session";
 import { parseDateAndTime, computeAvailableSlotsForStaff } from "@/lib/slot-engine";
+import { verifySameOrigin, safeErrorResponse } from "@/lib/api-guard";
+import { normalizeEmail } from "@/lib/validation/input-validators";
 import {
   consumeRateLimit,
   getClientIp,
@@ -17,8 +19,19 @@ export const dynamic = "force-dynamic";
 const BOOK_AUTH_WINDOW_MS = 15 * 60 * 1000;
 const MAX_BOOK_AUTH_FAILS = 5;
 
+class BookingConflictError extends Error {
+  status: number;
+  constructor(message: string, status = 409) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export async function POST(req: Request) {
   try {
+    const originErr = verifySameOrigin(req);
+    if (originErr) return originErr;
+
     const body = await req.json().catch(() => ({}));
     const {
       serviceId,
@@ -43,7 +56,7 @@ export async function POST(req: Request) {
         );
       }
 
-      const cleanEmail = customerEmail.trim().toLowerCase();
+      const cleanEmail = normalizeEmail(customerEmail);
       const ip = getClientIp(req);
       const authRateKey = `book-auth-fail:${ip}:${cleanEmail}`;
 
@@ -60,8 +73,26 @@ export async function POST(req: Request) {
       });
 
       if (existingUser) {
-        // Existing account: MUST verify password to prevent unauthorized impersonation
-        if (!customerPassword) {
+        // Google-only accounts have passwordHash === null and must authenticate via Google OAuth
+        if (!existingUser.passwordHash) {
+          const failState = consumeRateLimit(authRateKey, MAX_BOOK_AUTH_FAILS, BOOK_AUTH_WINDOW_MS);
+          if (!failState.allowed) {
+            return NextResponse.json(tooManyRequestsBody(failState.retryAfterSec), {
+              status: 429,
+              headers: { "Retry-After": String(failState.retryAfterSec) },
+            });
+          }
+          return NextResponse.json(
+            {
+              error:
+                "Esta cuenta está vinculada con Google. Por favor inicia sesión con Google para continuar.",
+            },
+            { status: 401 }
+          );
+        }
+
+        // Existing password-based account: MUST verify password to prevent unauthorized impersonation
+        if (!customerPassword || typeof customerPassword !== "string") {
           return NextResponse.json(
             {
               error:
@@ -72,30 +103,33 @@ export async function POST(req: Request) {
           );
         }
 
-        if (existingUser.passwordHash) {
-          const isMatch = await bcrypt.compare(customerPassword, existingUser.passwordHash);
-          if (!isMatch) {
-            const failState = consumeRateLimit(authRateKey, MAX_BOOK_AUTH_FAILS, BOOK_AUTH_WINDOW_MS);
-            if (!failState.allowed) {
-              return NextResponse.json(tooManyRequestsBody(failState.retryAfterSec), {
-                status: 429,
-                headers: { "Retry-After": String(failState.retryAfterSec) },
-              });
-            }
-            return NextResponse.json(
-              {
-                error: "Contraseña incorrecta. Por favor ingresa la contraseña de tu cuenta.",
-                requiresPassword: true,
-              },
-              { status: 401 }
-            );
+        const isMatch = await bcrypt.compare(customerPassword, existingUser.passwordHash);
+        if (!isMatch) {
+          const failState = consumeRateLimit(authRateKey, MAX_BOOK_AUTH_FAILS, BOOK_AUTH_WINDOW_MS);
+          if (!failState.allowed) {
+            return NextResponse.json(tooManyRequestsBody(failState.retryAfterSec), {
+              status: 429,
+              headers: { "Retry-After": String(failState.retryAfterSec) },
+            });
           }
-          resetRateLimit(authRateKey);
+          return NextResponse.json(
+            {
+              error: "Contraseña incorrecta. Por favor ingresa la contraseña de tu cuenta.",
+              requiresPassword: true,
+            },
+            { status: 401 }
+          );
         }
+        resetRateLimit(authRateKey);
         user = existingUser;
       } else {
         // New customer: create account with password
-        if (!customerPassword || typeof customerPassword !== "string" || customerPassword.length < 6 || customerPassword.length > 128) {
+        if (
+          !customerPassword ||
+          typeof customerPassword !== "string" ||
+          customerPassword.length < 6 ||
+          customerPassword.length > 128
+        ) {
           return NextResponse.json(
             {
               error: "Crea una contraseña (mínimo 6 caracteres) para proteger tu cuenta y tus citas.",
@@ -109,9 +143,9 @@ export async function POST(req: Request) {
         user = await prisma.user.create({
           data: {
             email: cleanEmail,
-            name: customerName.trim(),
+            name: String(customerName).trim().slice(0, 120),
             passwordHash,
-            phone: customerPhone ? customerPhone.trim() : null,
+            phone: customerPhone ? String(customerPhone).trim().slice(0, 40) : null,
             role: "CUSTOMER",
           },
         });
@@ -359,59 +393,78 @@ export async function POST(req: Request) {
       }
     }
 
-    // Atomic collision check on chosen staff
-    const conflict = await prisma.appointment.findFirst({
-      where: {
-        staffId: targetStaffId,
-        status: { in: ["CONFIRMED", "RESCHEDULED_BY_STAFF"] },
-        startAt: { lt: endAt },
-        endAt: { gt: startAt },
-      },
-    });
+    const customerId = user.id;
 
-    if (conflict) {
-      return NextResponse.json(
-        { error: "¡Ups! Este horario acaba de ser ocupado. Por favor elige otro." },
-        { status: 409 }
-      );
-    }
+    // Atomic transaction to prevent double-booking race conditions (TOCTOU)
+    const newAppointment = await prisma.$transaction(async (tx) => {
+      const txActiveCount = await tx.appointment.count({
+        where: {
+          customerId,
+          endAt: { gt: new Date() },
+          status: { in: ["CONFIRMED", "RESCHEDULED_BY_STAFF"] },
+        },
+      });
+      if (txActiveCount >= maxActive) {
+        throw new BookingConflictError(
+          `Ya tienes ${txActiveCount} citas futuras activas (el máximo permitido es ${maxActive}). Asiste a tu cita o modifícala antes de reservar una nueva.`,
+          429
+        );
+      }
 
-    const timeOff = await prisma.timeOff.findFirst({
-      where: {
-        staffId: targetStaffId,
-        startAt: { lt: endAt },
-        endAt: { gt: startAt },
-      },
-    });
+      const conflict = await tx.appointment.findFirst({
+        where: {
+          staffId: targetStaffId,
+          status: { in: ["CONFIRMED", "RESCHEDULED_BY_STAFF"] },
+          startAt: { lt: endAt },
+          endAt: { gt: startAt },
+        },
+      });
+      if (conflict) {
+        throw new BookingConflictError(
+          "¡Ups! Este horario acaba de ser ocupado. Por favor elige otro.",
+          409
+        );
+      }
 
-    if (timeOff) {
-      return NextResponse.json(
-        { error: "El profesional no se encuentra disponible en esa franja horaria." },
-        { status: 409 }
-      );
-    }
+      const timeOff = await tx.timeOff.findFirst({
+        where: {
+          staffId: targetStaffId,
+          startAt: { lt: endAt },
+          endAt: { gt: startAt },
+        },
+      });
+      if (timeOff) {
+        throw new BookingConflictError(
+          "El profesional no se encuentra disponible en esa franja horaria.",
+          409
+        );
+      }
 
-    // Create appointment
-    const newAppointment = await prisma.appointment.create({
-      data: {
-        customerId: user.id,
-        staffId: targetStaffId,
-        serviceId,
-        startAt,
-        endAt,
-        status: "CONFIRMED",
-        priceSnapshot: service.price,
-        customerNotes: customerNotes ? String(customerNotes).trim().slice(0, 500) : null,
-      },
-      include: {
-        service: true,
-        staff: true,
-      },
+      return tx.appointment.create({
+        data: {
+          customerId,
+          staffId: targetStaffId,
+          serviceId,
+          startAt,
+          endAt,
+          status: "CONFIRMED",
+          priceSnapshot: service.price,
+          customerNotes: customerNotes
+            ? String(customerNotes).trim().slice(0, 500)
+            : null,
+        },
+        include: {
+          service: true,
+          staff: true,
+        },
+      });
     });
 
     return NextResponse.json({ ok: true, appointment: newAppointment });
-  } catch (error: any) {
-    console.error("Booking error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    if (error instanceof BookingConflictError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    return safeErrorResponse(error, "No se pudo confirmar la reserva. Intenta nuevamente.");
   }
 }

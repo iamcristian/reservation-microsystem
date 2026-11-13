@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { canCustomerCancelAppointment } from "@/lib/booking-rules";
+import {
+  safeErrorResponse,
+  verifyProviderOwnsStaff,
+  verifySameOrigin,
+} from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +16,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const originErr = verifySameOrigin(req);
+    if (originErr) return originErr;
+
     const { id } = await params;
     const user = await getCurrentUser();
 
@@ -35,15 +43,8 @@ export async function POST(
     }
 
     if (!isOwner && user.role === "PROVIDER") {
-      const ownStaff = await prisma.staffProfile.findFirst({
-        where: { userId: user.id },
-      });
-      if (!ownStaff || ownStaff.id !== appointment.staffId) {
-        return NextResponse.json(
-          { error: "Solo puedes cancelar citas asignadas a tu propia agenda." },
-          { status: 403 }
-        );
-      }
+      const ownershipErr = await verifyProviderOwnsStaff(user, appointment.staffId);
+      if (ownershipErr) return ownershipErr;
     }
 
     const settings = await prisma.businessSettings.findFirst({ where: { id: 1 } });
@@ -86,8 +87,7 @@ export async function POST(
     }
 
     return NextResponse.json({ ok: true, appointment: updated });
-  } catch (error: any) {
-    console.error("Cancel appointment error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return safeErrorResponse(error, "No se pudo cancelar la cita.");
   }
 }

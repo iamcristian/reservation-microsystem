@@ -42,8 +42,10 @@ export async function getBootstrapPayload(options: { publicOnly?: boolean } = {}
   });
 
   if (!settings) {
-    settings = await prisma.businessSettings.create({
-      data: {
+    settings = await prisma.businessSettings.upsert({
+      where: { id: 1 },
+      update: {},
+      create: {
         id: 1,
         name: "Clínica Dental & Estética Sonrisa",
         tagline: "Atención odontológica y estética de primer nivel",
@@ -146,8 +148,8 @@ export async function getBootstrapPayload(options: { publicOnly?: boolean } = {}
   let allAppointments: any[] = [];
   let allUsers: any[] = [];
 
-  // Expose allAppointments and allUsers only to ADMIN and PROVIDER
-  if (currentUser && (currentUser.role === "ADMIN" || currentUser.role === "PROVIDER")) {
+  // Expose full roster & global appointments only to ADMIN; PROVIDER receives only their own agenda
+  if (currentUser && currentUser.role === "ADMIN") {
     allAppointments = await prisma.appointment.findMany({
       include: {
         service: true,
@@ -178,6 +180,28 @@ export async function getBootstrapPayload(options: { publicOnly?: boolean } = {}
         completedCount: true,
       },
     });
+  } else if (currentUser && currentUser.role === "PROVIDER") {
+    const ownProfile = staff.find((s) => (s as { userId?: string }).userId === currentUser.id);
+    if (ownProfile) {
+      allAppointments = await prisma.appointment.findMany({
+        where: { staffId: ownProfile.id },
+        include: {
+          service: true,
+          staff: true,
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              isBlocked: true,
+              noShowCount: true,
+            },
+          },
+        },
+        orderBy: { startAt: "asc" },
+      });
+    }
   }
 
   // Never ship credential material or internal notes to the browser.

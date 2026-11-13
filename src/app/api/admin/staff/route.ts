@@ -1,28 +1,49 @@
 // src/app/api/admin/staff/route.ts
 import { NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/session";
+import {
+  requireAdmin,
+  requireStaffOrAdmin,
+  safeErrorResponse,
+  sanitizeUserForClient,
+  verifyProviderOwnsStaff,
+  verifySameOrigin,
+} from "@/lib/api-guard";
+import {
+  clampInt,
+  normalizeEmail,
+  sanitizeImageOrDataUrl,
+} from "@/lib/validation/input-validators";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
 
-// Solo el ADMIN (Dueño principal) puede dar de alta, editar o desactivar personal/doctores
+const DEFAULT_STAFF_AVATAR =
+  "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80";
+
+// Solo el ADMIN (Dueño principal) puede dar de alta o revocar personal/doctores
 export async function POST(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Solo el Administrador/Dueño principal puede gestionar cuentas del personal." },
-        { status: 403 }
-      );
-    }
+    const originErr = verifySameOrigin(req);
+    if (originErr) return originErr;
 
-    const body = await req.json();
-    const displayName = (body.displayName || "").trim();
-    const specialtyTitle = (body.specialtyTitle || "Especialista").trim();
-    const email = (body.email || "").trim().toLowerCase();
-    const phone = (body.phone || "").trim();
-    const avatarUrl = (body.avatarUrl || "").trim() || null;
+    const auth = await requireAdmin(
+      "Solo el Administrador/Dueño principal puede gestionar cuentas del personal."
+    );
+    if (auth.error) return auth.error;
+
+    const body = await req.json().catch(() => ({}));
+    const displayName = String(body.displayName || "").trim().slice(0, 120);
+    const specialtyTitle = String(body.specialtyTitle || "Especialista").trim().slice(0, 120);
+    const email = normalizeEmail(body.email);
+    const phone = String(body.phone || "").trim().slice(0, 40);
+
+    const avatarCheck = sanitizeImageOrDataUrl(body.avatarUrl);
+    if (!avatarCheck.ok) {
+      return NextResponse.json({ error: avatarCheck.error }, { status: 400 });
+    }
+    const avatarUrl = avatarCheck.value;
 
     if (displayName.length < 3) {
       return NextResponse.json(
@@ -39,8 +60,13 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1. Crear o actualizar el usuario con rol PROVIDER y contraseña segura
-    const initialStaffPassword = await bcrypt.hash(body.password || "Doctor123!", 10);
+    // Generate cryptographically random initial password when omitted (avoid hardcoded defaults)
+    const rawPassword =
+      typeof body.password === "string" && body.password.trim().length >= 6
+        ? body.password.trim()
+        : randomBytes(12).toString("base64url");
+    const initialStaffPassword = await bcrypt.hash(rawPassword, 10);
+
     let staffUser = await prisma.user.findUnique({ where: { email } });
     if (!staffUser) {
       staffUser = await prisma.user.create({
@@ -54,10 +80,21 @@ export async function POST(req: Request) {
         },
       });
     } else {
+      const existingProfile = await prisma.staffProfile.findUnique({
+        where: { userId: staffUser.id },
+      });
+      if (existingProfile) {
+        return NextResponse.json(
+          { error: "Este correo ya pertenece a un profesional registrado en el equipo." },
+          { status: 409 }
+        );
+      }
+
+      // Never demote an existing ADMIN account to PROVIDER
       staffUser = await prisma.user.update({
         where: { id: staffUser.id },
         data: {
-          role: "PROVIDER",
+          role: staffUser.role === "ADMIN" ? "ADMIN" : "PROVIDER",
           name: displayName,
           passwordHash: staffUser.passwordHash || initialStaffPassword,
           phone: phone || staffUser.phone,
@@ -65,10 +102,10 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2. Crear su StaffProfile y asignarle servicios seleccionados (o todos los activos por defecto) y horarios base Lun-Sáb
     const allServices = await prisma.service.findMany({ where: { isActive: true } });
+    const validIdSet = new Set(allServices.map((s) => s.id));
     const targetServiceIds: string[] = Array.isArray(body.serviceIds)
-      ? body.serviceIds
+      ? body.serviceIds.map(String).filter((id: string) => validIdSet.has(id))
       : allServices.map((s) => s.id);
 
     const newStaff = await prisma.staffProfile.create({
@@ -76,9 +113,7 @@ export async function POST(req: Request) {
         userId: staffUser.id,
         displayName,
         specialtyTitle,
-        avatarUrl:
-          avatarUrl ||
-          "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80",
+        avatarUrl: avatarUrl || DEFAULT_STAFF_AVATAR,
         isActive: true,
         services: {
           create: targetServiceIds.map((serviceId) => ({
@@ -109,20 +144,24 @@ export async function POST(req: Request) {
       },
     });
 
-    const { passwordHash: _ph, googleId: _gid, ...safeStaffUser } = staffUser;
-
-    return NextResponse.json({ ok: true, staff: newStaff, user: safeStaffUser });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({
+      ok: true,
+      staff: newStaff,
+      user: sanitizeUserForClient(staffUser),
+    });
+  } catch (error: unknown) {
+    return safeErrorResponse(error, "No se pudo registrar al profesional.");
   }
 }
 
 export async function PATCH(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user || (user.role !== "ADMIN" && user.role !== "PROVIDER")) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
+    const originErr = verifySameOrigin(req);
+    if (originErr) return originErr;
+
+    const auth = await requireStaffOrAdmin();
+    if (auth.error) return auth.error;
+    const { user } = auth;
 
     const body = await req.json().catch(() => ({}));
     const {
@@ -136,21 +175,20 @@ export async function PATCH(req: Request) {
       serviceIds,
     } = body;
 
-    if (!staffId) {
+    if (!staffId || typeof staffId !== "string") {
       return NextResponse.json({ error: "staffId requerido" }, { status: 400 });
     }
 
-    // Role check: PROVIDER can only edit their own staff profile
-    if (user.role === "PROVIDER") {
-      const ownStaff = await prisma.staffProfile.findFirst({
-        where: { userId: user.id },
-      });
-      if (!ownStaff || ownStaff.id !== staffId) {
-        return NextResponse.json(
-          { error: "Solo tienes permisos para modificar tu propio perfil." },
-          { status: 403 }
-        );
+    const ownershipErr = await verifyProviderOwnsStaff(user, staffId);
+    if (ownershipErr) return ownershipErr;
+
+    let validatedAvatar: string | null | undefined = undefined;
+    if (avatarUrl !== undefined) {
+      const avatarCheck = sanitizeImageOrDataUrl(avatarUrl);
+      if (!avatarCheck.ok) {
+        return NextResponse.json({ error: avatarCheck.error }, { status: 400 });
       }
+      validatedAvatar = avatarCheck.value;
     }
 
     if (Array.isArray(serviceIds)) {
@@ -175,17 +213,31 @@ export async function PATCH(req: Request) {
     const updated = await prisma.staffProfile.update({
       where: { id: staffId },
       data: {
-        ...(isActive !== undefined ? { isActive: Boolean(isActive) } : {}),
-        ...(displayName ? { displayName: displayName.trim() } : {}),
-        ...(specialtyTitle ? { specialtyTitle: specialtyTitle.trim() } : {}),
-        ...(avatarUrl !== undefined
-          ? { avatarUrl: avatarUrl ? avatarUrl.trim() : null }
+        ...(isActive !== undefined && user.role === "ADMIN"
+          ? { isActive: Boolean(isActive) }
           : {}),
+        ...(typeof displayName === "string" && displayName.trim().length >= 2
+          ? { displayName: displayName.trim().slice(0, 120) }
+          : {}),
+        ...(typeof specialtyTitle === "string" && specialtyTitle.trim().length >= 2
+          ? { specialtyTitle: specialtyTitle.trim().slice(0, 120) }
+          : {}),
+        ...(validatedAvatar !== undefined ? { avatarUrl: validatedAvatar } : {}),
         ...(customHorizonDays !== undefined
-          ? { customHorizonDays: Number(customHorizonDays) }
+          ? {
+              customHorizonDays:
+                customHorizonDays === null
+                  ? null
+                  : clampInt(customHorizonDays, 1, 90, 7),
+            }
           : {}),
         ...(customLeadTimeMin !== undefined
-          ? { customLeadTimeMin: Number(customLeadTimeMin) }
+          ? {
+              customLeadTimeMin:
+                customLeadTimeMin === null
+                  ? null
+                  : clampInt(customLeadTimeMin, 0, 1440, 30),
+            }
           : {}),
       },
       include: {
@@ -205,20 +257,21 @@ export async function PATCH(req: Request) {
     });
 
     return NextResponse.json({ ok: true, staff: updated });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return safeErrorResponse(error, "No se pudo actualizar el perfil del profesional.");
   }
 }
 
 export async function DELETE(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Solo el Administrador/Dueño puede revocar accesos de personal." },
-        { status: 403 }
-      );
-    }
+    const originErr = verifySameOrigin(req);
+    if (originErr) return originErr;
+
+    const auth = await requireAdmin(
+      "Solo el Administrador/Dueño puede revocar accesos de personal."
+    );
+    if (auth.error) return auth.error;
+    const { user } = auth;
 
     const { searchParams } = new URL(req.url);
     const staffId = searchParams.get("staffId");
@@ -244,7 +297,7 @@ export async function DELETE(req: Request) {
     }
 
     return NextResponse.json({ ok: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return safeErrorResponse(error, "No se pudo revocar el acceso del personal.");
   }
 }
