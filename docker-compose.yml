@@ -1,0 +1,18 @@
+services:
+  reservas-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: reservas-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/prod.db
+      - SESSION_SECRET=${SESSION_SECRET:?Define SESSION_SECRET en .env (mínimo 32 caracteres)}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:?Define NEXT_PUBLIC_APP_URL (ej. https://tudominio.com)}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+    volumes:
+      - ./data:/app/data

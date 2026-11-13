@@ -30,6 +30,8 @@ next-env.d.ts
 # sqlite local db
 prisma/*.db
 prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
 
 certificates
 
