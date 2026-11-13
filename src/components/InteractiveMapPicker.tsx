@@ -12,24 +12,8 @@ import {
   Crosshair,
 } from "lucide-react";
 
-export function parseCoordinatesFromUrl(url?: string | null): { lat: number; lng: number } | null {
-  if (!url) return null;
-  // Match query=LAT,LNG or q=LAT,LNG
-  const queryMatch = url.match(/[?&](?:query|q)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
-  if (queryMatch) {
-    const lat = parseFloat(queryMatch[1]);
-    const lng = parseFloat(queryMatch[2]);
-    if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
-  }
-  // Match @LAT,LNG
-  const atMatch = url.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
-  if (atMatch) {
-    const lat = parseFloat(atMatch[1]);
-    const lng = parseFloat(atMatch[2]);
-    if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
-  }
-  return null;
-}
+import { parseCoordinatesFromUrl } from "@/lib/geo";
+export { parseCoordinatesFromUrl };
 
 export function buildGoogleMapsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lng.toFixed(6)}`;
@@ -262,20 +246,20 @@ export default function InteractiveMapPicker({
       {/* Top Search & GPS Toolbar */}
       <div className="flex flex-col sm:flex-row gap-2">
         <form onSubmit={handleSearch} className="flex-1 flex items-center gap-1.5">
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
               type="text"
               placeholder="Escribe calle, plaza o zona (ej. Av. América Cochabamba)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-900 focus:bg-white transition-all"
+              className="w-full min-h-[38px] pl-8 pr-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-xl text-base sm:text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-900 focus:bg-white transition-all"
             />
           </div>
           <button
             type="submit"
             disabled={searching}
-            className="px-3 py-1.5 bg-[#1F1F23] hover:bg-black text-white text-xs font-semibold rounded-xl flex items-center gap-1 transition-all flex-shrink-0 disabled:opacity-50"
+            className="min-h-[38px] px-3 py-1.5 bg-[#1F1F23] hover:bg-black text-white text-xs font-semibold rounded-xl flex items-center gap-1 transition-all flex-shrink-0 disabled:opacity-50"
           >
             {searching ? (
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -290,7 +274,7 @@ export default function InteractiveMapPicker({
           type="button"
           onClick={handleUseMyLocation}
           disabled={geolocating}
-          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all flex-shrink-0 disabled:opacity-50"
+          className="min-h-[38px] px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all flex-shrink-0 disabled:opacity-50"
           title="Fijar en mi posición GPS actual"
         >
           {geolocating ? (
@@ -361,18 +345,21 @@ export default function InteractiveMapPicker({
       </div>
 
       {/* Google Maps link sync badge */}
-      <div className="flex items-center justify-between text-[11px] text-zinc-500 bg-zinc-50 p-2.5 rounded-xl border border-zinc-200">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0"></span>
-          <span className="truncate">
-            Enlace sincronizado: <b className="text-zinc-800">{buildGoogleMapsUrl(coords.lat, coords.lng)}</b>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-zinc-500 bg-zinc-50 p-2.5 rounded-xl border border-zinc-200">
+        <div className="flex items-start sm:items-center gap-1.5 min-w-0 flex-1">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0 mt-1 sm:mt-0"></span>
+          <span className="min-w-0 flex-1 break-all leading-snug">
+            Enlace sincronizado:{" "}
+            <span className="text-zinc-800 font-bold">
+              {buildGoogleMapsUrl(coords.lat, coords.lng)}
+            </span>
           </span>
         </div>
         <a
           href={buildGoogleMapsUrl(coords.lat, coords.lng)}
           target="_blank"
           rel="noreferrer"
-          className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:underline ml-2"
+          className="self-start sm:self-auto flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:underline sm:ml-2 whitespace-nowrap"
         >
           <span>Probar en Google Maps</span>
           <ExternalLink className="w-3 h-3" />

@@ -93,30 +93,30 @@ export default function BranchMap({
         />
 
         {/* Floating marker notice pill */}
-        <div className="absolute top-2 left-2 z-10 pointer-events-none">
-          <span className="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-white/95 text-zinc-800 font-bold border border-zinc-200 shadow-sm backdrop-blur-xs">
-            <span className="text-rose-600">📍</span>
-            <span>Av. Simón López & Beijing</span>
+        <div className="absolute top-2 left-2 right-12 z-10 pointer-events-none">
+          <span className="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-white/95 text-zinc-800 font-bold border border-zinc-200 shadow-sm backdrop-blur-xs max-w-full">
+            <span className="text-rose-600 shrink-0">📍</span>
+            <span className="truncate">{addressText || name}</span>
           </span>
         </div>
       </div>
 
       {/* Action Footer Bar */}
-      <div className="p-2.5 bg-white border-t border-zinc-100 flex items-center gap-2">
+      <div className="p-2.5 bg-white border-t border-zinc-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
         <a
           href={exactMapsUrl}
           target="_blank"
           rel="noreferrer"
-          className="flex-1 py-2 px-3 rounded-full bg-[#1F1F23] text-white text-xs font-semibold hover:bg-black transition-all flex items-center justify-center gap-1.5 shadow-xs"
+          className="flex-1 min-h-[40px] py-2 px-3 rounded-full bg-[#1F1F23] text-white text-xs font-semibold hover:bg-black transition-all flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap"
         >
-          <MapPin className="w-3.5 h-3.5 text-rose-400" />
-          <span>Ver ubicación en Google Maps</span>
+          <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+          <span>Abrir en Google Maps</span>
         </a>
 
         <button
           type="button"
           onClick={handleCopy}
-          className="py-2 px-3 rounded-full bg-zinc-100 hover:bg-zinc-200 text-[#1F1F23] text-xs font-medium transition-all flex items-center gap-1 border border-zinc-200/60"
+          className="min-h-[40px] py-2 px-3.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-[#1F1F23] text-xs font-medium transition-all flex items-center justify-center gap-1.5 border border-zinc-200/60 whitespace-nowrap"
           title="Copiar dirección"
         >
           {copied ? (
@@ -127,7 +127,7 @@ export default function BranchMap({
           ) : (
             <>
               <Copy className="w-3.5 h-3.5 text-zinc-600" />
-              <span>Copiar</span>
+              <span>Copiar dirección</span>
             </>
           )}
         </button>
